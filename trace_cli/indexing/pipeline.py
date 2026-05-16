@@ -41,10 +41,18 @@ class IndexingError(Exception):
 def _segments_from_video_transcript(video) -> list[TranscriptSegment]:
     """Read the spoken-word transcript off a freshly indexed Video.
 
-    SDK exposes `video.get_transcript()` which returns either a list of segment
-    dicts {start, end, text} or a single string. Normalise to TranscriptSegment.
+    SDK exposes `video.get_transcript(segmenter=...)` which returns either a list of
+    segment dicts {start, end, text} or a single string. We request sentence-level
+    segmentation to give the timeline classifier meaningful chunks (word-level is
+    too granular for the >= 3 words / >= 1s speech rule).
     """
-    raw = video.get_transcript() if hasattr(video, "get_transcript") else None
+    if not hasattr(video, "get_transcript"):
+        return []
+    try:
+        from videodb import Segmenter
+        raw = video.get_transcript(segmenter=Segmenter.sentence)
+    except Exception:
+        raw = video.get_transcript()
     if not raw:
         return []
     if isinstance(raw, str):
@@ -64,6 +72,29 @@ def _segments_from_video_transcript(video) -> list[TranscriptSegment]:
     return segs
 
 
+def _mux_audio_into_video(video_path: Path, audio_path: Path, *, out_path: Path) -> Path:
+    """Mux audio.wav into video mp4 using ffmpeg. Returns out_path on success.
+
+    VideoDB transcription needs an audio stream in the uploaded video; wf-recorder
+    writes video-only mp4 while audio is captured by a parallel ffmpeg process.
+    """
+    import subprocess
+    cmd = [
+        "ffmpeg", "-y",
+        "-i", str(video_path),
+        "-i", str(audio_path),
+        "-c:v", "copy",
+        "-c:a", "aac",
+        "-shortest",
+        str(out_path),
+    ]
+    log.info("muxing audio into video: %s", " ".join(cmd))
+    r = subprocess.run(cmd, capture_output=True, text=True)
+    if r.returncode != 0:
+        raise IndexingError(f"ffmpeg mux failed: {r.stderr[:500]}")
+    return out_path
+
+
 def run_indexing(session_id: str, *, store: SessionStore | None = None, scene_time: int = 10) -> SessionMetadata:
     """Upload mp4 + index spoken words + index scenes. Updates metadata."""
     store = store or SessionStore()
@@ -72,13 +103,24 @@ def run_indexing(session_id: str, *, store: SessionStore | None = None, scene_ti
     if not screen.exists() or screen.stat().st_size == 0:
         raise IndexingError(f"screen.mp4 missing or empty for session {session_id}")
 
+    # Mux audio.wav into the mp4 so VideoDB can transcribe.
+    audio = store.audio_path(session_id)
+    upload_path = screen
+    if audio.exists() and audio.stat().st_size > 0:
+        muxed = screen.with_name("screen_av.mp4")
+        try:
+            upload_path = _mux_audio_into_video(screen, audio, out_path=muxed)
+            log.info("muxed video+audio to %s (%d bytes)", upload_path, upload_path.stat().st_size)
+        except IndexingError as e:
+            log.warning("mux failed (%s); uploading video-only", e)
+
     client = VideoDBClient()
 
     # 1. Upload (retried because network is the most failure-prone here)
-    log.info("uploading %s to VideoDB...", screen)
+    log.info("uploading %s to VideoDB...", upload_path)
     try:
         video = retry_sync(
-            lambda: client.upload_file(screen, name=f"trace-{session_id[:8]}"),
+            lambda: client.upload_file(upload_path, name=f"trace-{session_id[:8]}"),
             max_attempts=3,
             base_delay=2.0,
         )

@@ -137,8 +137,17 @@ class VideoDBClient:
     # ---- Indexing -------------------------------------------------------
 
     def index_video_spoken(self, video: Video) -> None:
+        from videodb import SegmentationType
         try:
-            video.index_spoken_words()
+            video.index_spoken_words(segmentation_type=SegmentationType.sentence)
+        except Exception as e:  # noqa: BLE001
+            raise _wrap(e) from e
+
+    def get_transcript_sentences(self, video: Video) -> list[dict]:
+        """Return spoken-word transcript chunked at sentence granularity."""
+        from videodb import Segmenter
+        try:
+            return video.get_transcript(segmenter=Segmenter.sentence) or []
         except Exception as e:  # noqa: BLE001
             raise _wrap(e) from e
 
