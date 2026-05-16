@@ -45,7 +45,7 @@ def render(
     per_clip_scripts: list[str],
     *,
     voice: str = "Default",
-    source_volume: float = 0.15,
+    source_volume: float = 0.0,
 ) -> RenderResult:
     if not clips or not per_clip_scripts:
         raise ValueError("clips and per_clip_scripts must be non-empty")
