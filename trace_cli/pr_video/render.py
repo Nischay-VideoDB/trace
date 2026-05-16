@@ -62,7 +62,7 @@ def render(
         total += end - start
 
     if audio_id:
-        audio_asset = client.audio_asset(audio_id=audio_id, disable_other_tracks=False, fade_in=1, fade_out=1)
+        audio_asset = client.audio_asset(audio_id=audio_id, disable_other_tracks=True, fade_in=1, fade_out=1)
         tl.add_overlay(0, audio_asset)
 
     # 3. Render to HLS
