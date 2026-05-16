@@ -78,15 +78,23 @@ def render(
         src_end = min(video_length - 0.05 if video_length > 0 else sc.end, sc.end)
         src_dur = max(0.5, src_end - src_start)
 
-        target_dur = max(src_dur, alen + 0.5) if alen > 0 else src_dur
-        # Try to fit target_dur within source. If source span too short, extend
-        # src_end up to video_length; if narration still longer, just let
-        # source loop or freeze on last frame (output_dur dictates timeline).
-        if alen > 0 and alen + 0.5 > src_dur and video_length > 0:
-            extend = (alen + 0.5) - src_dur
+        # Tail buffer 0.1s only. Make video clip match narration length when narration
+        # exists; ignore raw source clip duration so we never show dead air.
+        if alen > 0:
+            target_dur = alen + 0.1
+        else:
+            target_dur = src_dur
+
+        # If narration is longer than the source span, extend src_end into the
+        # rest of the recording so we have video to show.
+        if alen > 0 and target_dur > src_dur and video_length > 0:
+            extend = target_dur - src_dur
             new_end = min(video_length - 0.05, src_end + extend)
             src_end = new_end
             src_dur = src_end - src_start
+        elif alen > 0 and target_dur < src_dur:
+            # Narration shorter than source span: trim source to match.
+            src_end = src_start + target_dur
 
         plans.append((src_start, src_end, target_dur))
 

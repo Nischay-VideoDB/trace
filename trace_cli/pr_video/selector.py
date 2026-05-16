@@ -48,11 +48,11 @@ def select_clips(
     timeline: Timeline,
     diff_files: list[str],
     *,
-    min_total: float = 15.0,
-    max_total: float = 120.0,
-    pad_seconds: float = 6.0,
-    min_clip_seconds: float = 5.0,
-    max_clip_seconds: float = 20.0,
+    min_total: float = 10.0,
+    max_total: float = 75.0,
+    pad_seconds: float = 2.0,
+    min_clip_seconds: float = 3.0,
+    max_clip_seconds: float = 12.0,
 ) -> list[Clip]:
     """Pick per-moment clips ordered by start time.
 
