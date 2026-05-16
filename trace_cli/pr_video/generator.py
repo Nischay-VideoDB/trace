@@ -59,11 +59,24 @@ def generate_pr_video(session_id: str, pr_url: str, *, dry_run: bool = False) ->
     clips = select_clips(timeline, diff_paths)
     log.info("selected %d clips totaling %.1fs", len(clips), sum(c.duration for c in clips))
 
-    # Per-clip narration
+    # Per-clip narration grounded in scene index
     client = VideoDBClient()
     pr_title = f"PR #{pr.number}"
     pr_summary = ", ".join(f"{f['path']} (+{f['additions']} -{f['deletions']})" for f in files[:5])
-    scripts = build_per_clip_scripts(client, clips, transcript, pr_title=pr_title, pr_summary=pr_summary)
+    scenes: list[dict] = []
+    scene_index_id = meta.model_dump().get("scene_index_id")
+    if scene_index_id and meta.video_id:
+        try:
+            video = client.get_video(meta.video_id)
+            scenes = client.get_scenes(video, scene_index_id)
+            log.info("scenes for narration: %d windows", len(scenes))
+        except Exception as e:  # noqa: BLE001
+            log.warning("scene fetch failed (%s); narration without visual context", e)
+    scripts = build_per_clip_scripts(
+        client, clips, transcript,
+        pr_title=pr_title, pr_summary=pr_summary,
+        scenes=scenes,
+    )
     log.info("narration: %d chunks, total %d chars", len(scripts), sum(len(s) for s in scripts))
 
     # Render + assemble Timeline with per-clip overlays

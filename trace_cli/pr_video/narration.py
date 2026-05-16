@@ -1,15 +1,19 @@
 """Per-clip narration scripts via VideoDB-hosted LLM.
 
-We generate one short script per clip so each chunk lines up with what is on
-screen during that clip. Each chunk targets ~ duration*15 chars of speech.
+For each clip we pass two ground-truth inputs to the LLM so it does not
+hallucinate:
+  spoken: the user's transcript words during that clip window.
+  scene:  the VideoDB scene-index summary of what is visible on screen
+          during that clip window (label, files, errors, summary).
 
-Two passes:
-  1. Anchor: one short overview line for the whole PR (~8s of TTS).
-  2. Per-clip: a 4-12s script using the clip's spoken transcript + evidence.
+A single LLM call returns delimited per-clip chunks so the model has full
+context and never repeats itself across overlapping clips.
 """
 from __future__ import annotations
 
+import json
 import logging
+import re
 
 from trace_cli.pr_video.selector import Clip
 from trace_cli.session.models import Transcript
@@ -28,6 +32,59 @@ def _transcript_for_clip(transcript: Transcript, clip: Clip) -> str:
             continue
         parts.append(seg.text.strip())
     return " ".join(p for p in parts if p)
+
+
+_FENCED_JSON_RE = re.compile(r"```(?:json)?\s*(\{.*?\})\s*```", re.DOTALL)
+
+
+def _parse_scene_desc(desc: str) -> dict:
+    """Scene `description` is often a fenced JSON block; extract the dict."""
+    if not desc:
+        return {}
+    m = _FENCED_JSON_RE.search(desc)
+    raw = m.group(1) if m else desc.strip()
+    try:
+        d = json.loads(raw)
+        return d if isinstance(d, dict) else {}
+    except (ValueError, TypeError):
+        # Fall back: treat the whole description as summary text.
+        return {"summary": desc[:200]}
+
+
+def _scenes_for_clip(scenes: list[dict], clip: Clip) -> list[dict]:
+    """Return scene-index entries that overlap this clip."""
+    out: list[dict] = []
+    for s in scenes:
+        s_start = float(s.get("start", 0.0) or 0.0)
+        s_end = float(s.get("end", 0.0) or 0.0)
+        if s_end <= clip.start or s_start >= clip.end:
+            continue
+        parsed = _parse_scene_desc(s.get("description", ""))
+        parsed["_start"] = s_start
+        parsed["_end"] = s_end
+        out.append(parsed)
+    return out
+
+
+def _format_scene_for_prompt(scenes: list[dict]) -> str:
+    """Compress a list of scene dicts into a short human readable summary."""
+    if not scenes:
+        return ""
+    bits: list[str] = []
+    for sc in scenes:
+        label = sc.get("label", "")
+        summary = sc.get("summary", "")
+        files = sc.get("files") or []
+        errors = sc.get("errors") or []
+        chunk = f"[{sc.get('_start',0):.0f}-{sc.get('_end',0):.0f}s {label}]"
+        if files:
+            chunk += f" files={','.join(files[:3])}"
+        if errors:
+            chunk += f" errors={errors[0][:80]!r}"
+        if summary:
+            chunk += f" {summary[:140]}"
+        bits.append(chunk)
+    return " | ".join(bits)
 
 
 def _trim_at_sentence(text: str, max_chars: int) -> str:
@@ -50,24 +107,24 @@ def build_per_clip_scripts(
     pr_title: str = "this change",
     pr_summary: str = "",
     model: str = "pro",
+    scenes: list[dict] | None = None,
 ) -> list[str]:
-    """Generate a single PR-wide script then split into per-clip chunks.
+    """Generate per-clip narration grounded in scene + transcript.
 
-    Single-pass approach so the LLM knows the full arc and avoids repeating
-    itself across overlapping moments. We ask for delimited chunks (one per
-    clip) and parse them out. Each chunk targets ~ duration*15 chars.
+    Pass `scenes` from `VideoDBClient.get_scenes(video, scene_index_id)` to
+    give the LLM ground truth about what is visually on screen for each clip.
+    Without scenes the model can hallucinate technical detail.
     """
     if not clips:
         return []
+    scenes = scenes or []
 
-    # Attach spoken transcript to each clip.
     for c in clips:
         c.spoken = _transcript_for_clip(transcript, c)
 
-    # Build a single prompt describing all clips as numbered chunks.
     chunk_specs = []
     for i, c in enumerate(clips):
-        target_s = max(3, int(c.duration * 0.8))  # leave breathing room
+        target_s = max(3, int(c.duration * 0.8))
         target_chars = max(60, int(target_s * CHARS_PER_SEC))
         kind = {
             "progress": "edit-and-save",
@@ -76,28 +133,41 @@ def build_per_clip_scripts(
             "stuck":    "stuck",
         }.get(c.category, "general")
         file_hint = f" in {c.file_path}" if c.file_path else ""
-        spoken = f' (I said: "{c.spoken[:200]}")' if c.spoken else ""
+        spoken = f' I said: "{c.spoken[:200]}"' if c.spoken else " I said nothing."
+        scene_text = _format_scene_for_prompt(_scenes_for_clip(scenes, c))
+        scene_hint = f" On screen: {scene_text[:400]}" if scene_text else ""
         chunk_specs.append(
-            f"<chunk index={i} max_chars={target_chars} kind={kind}{file_hint}>{spoken}</chunk>"
+            f"<chunk index={i} max_chars={target_chars} kind={kind}{file_hint}>"
+            f"{spoken}{scene_hint}</chunk>"
         )
 
     total_target_chars = sum(max(60, int(c.duration * 0.8 * CHARS_PER_SEC)) for c in clips)
     prompt = (
         f"Write a PR walkthrough narration split across {len(clips)} sequential chunks. "
         "Each chunk plays over a different clip of the recording, so DO NOT repeat content "
-        "from earlier chunks. Each chunk continues the story from the last. "
-        "Speak in first person (I/me). Sound like the developer thinking out loud. "
-        "Short sentences. Plain English. No markdown, no labels, no phrases like "
-        "'in this clip' or 'now I will'.\n\n"
+        "from earlier chunks. Each chunk continues the story from the last.\n\n"
+        "GROUND TRUTH RULES:\n"
+        "- The 'I said' field is the developer's actual transcribed words. Stay faithful "
+        "to that intent. Paraphrase for clarity but do not invent specific technical claims "
+        "the developer did not make.\n"
+        "- The 'On screen' field tells you what is visually present (terminal, browser, "
+        "code editor, files, errors). Describe what is shown, not what you imagine.\n"
+        "- If both fields are sparse, keep the chunk short and generic. Do NOT invent "
+        "function names, error messages, decisions, or technical reasoning that has no "
+        "support in the provided context.\n\n"
+        "STYLE:\n"
+        "- Speak in first person (I/me). Sound like the developer narrating their own "
+        "session in a calm, factual voice. Short sentences. Plain English. "
+        "No markdown, no labels, no phrases like 'in this clip' or 'now I will'.\n\n"
         f"PR: {pr_title}. {pr_summary[:200]}\n\n"
         "Chunks (preserve order, do not exceed each max_chars):\n"
         + "\n".join(chunk_specs)
-        + "\n\nFormat your output EXACTLY like this, one chunk per line, no extra text:\n"
+        + "\n\nFormat output EXACTLY like this, one chunk per line, no extra text:\n"
         "[0] <narration for chunk 0>\n"
         "[1] <narration for chunk 1>\n"
         f"... up to [{len(clips) - 1}]\n\n"
-        f"Total budget is about {total_target_chars} characters across all chunks. "
-        "The whole script should tell ONE coherent story arc with no repetition."
+        f"Total budget about {total_target_chars} characters across all chunks. "
+        "One coherent story arc, no repetition, no hallucination."
     )
 
     try:

@@ -151,6 +151,18 @@ class VideoDBClient:
         except Exception as e:  # noqa: BLE001
             raise _wrap(e) from e
 
+    def get_scenes(self, video: Video, scene_index_id: str) -> list[dict]:
+        """Fetch the scene index results: list of {start, end, description}.
+
+        description is the LLM-generated string from the index_scenes prompt.
+        Used by narration to know what is on screen at each time window.
+        """
+        try:
+            scenes = video.get_scene_index(scene_index_id)
+            return list(scenes) if scenes else []
+        except Exception as e:  # noqa: BLE001
+            raise _wrap(e) from e
+
     def index_video_scenes(
         self,
         video: Video,
