@@ -133,4 +133,41 @@ def generate_pr_video(session_id: str, pr_url: str, *, dry_run: bool = False) ->
     except Exception as e:  # noqa: BLE001
         log.warning("PR description append failed: %s", e)
 
+    # Focus Mode: post a per-file review checklist comment
+    try:
+        from trace_cli.focus_mode.builder import build_focus, render_comment as render_focus
+        focus_entries = build_focus(files, timeline, transcript)
+        focus_body = render_focus(focus_entries)
+        gh.post_comment(pr_url, focus_body)
+        store.artifact_path(session_id, "focus_mode.md").write_text(focus_body, encoding="utf-8")
+        log.info("posted focus mode comment (%d entries)", len(focus_entries))
+    except Exception as e:  # noqa: BLE001
+        log.warning("focus mode post failed: %s", e)
+
+    # Replay the Bug: attempt to detect a failure->error->fix arc and post
+    try:
+        from trace_cli.pr_video.bug_replay import detect_bug_arc, render_bug_clip
+        arc = detect_bug_arc(timeline, transcript, scenes)
+        if arc:
+            rendered = render_bug_clip(client, meta.video_id, arc, pr_title=pr_title)
+            if rendered:
+                bug_url, bug_narration = rendered
+                bug_body = (
+                    "## trace - Replay the Bug\n\n"
+                    "Auto-detected a failure-to-fix arc in this session.\n\n"
+                    f"**Watch:** {bug_url}\n\n"
+                    f"_Stitched from the recorded failure moment, the terminal error, and the subsequent fix._"
+                )
+                gh.post_comment(pr_url, bug_body)
+                store.artifact_path(session_id, "bug_replay.txt").write_text(
+                    f"{bug_url}\n\n{bug_narration}", encoding="utf-8",
+                )
+                log.info("posted bug replay clip: %s", bug_url)
+            else:
+                log.info("bug arc detected but render failed; skipping comment")
+        else:
+            log.info("no clear bug arc detected; skipping bug replay")
+    except Exception as e:  # noqa: BLE001
+        log.warning("bug replay failed: %s", e)
+
     return result
