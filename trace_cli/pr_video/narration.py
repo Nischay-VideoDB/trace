@@ -1,17 +1,24 @@
-"""Narration script generation via VideoDB-hosted LLM."""
+"""Per-clip narration scripts via VideoDB-hosted LLM.
+
+We generate one short script per clip so each chunk lines up with what is on
+screen during that clip. Each chunk targets ~ duration*15 chars of speech.
+
+Two passes:
+  1. Anchor: one short overview line for the whole PR (~8s of TTS).
+  2. Per-clip: a 4-12s script using the clip's spoken transcript + evidence.
+"""
 from __future__ import annotations
 
 import logging
 
 from trace_cli.pr_video.selector import Clip
-from trace_cli.session.models import Transcript, TranscriptSegment
+from trace_cli.session.models import Transcript
 from trace_cli.videodb.client import VideoDBClient
 
 log = logging.getLogger("trace.pr_video.narration")
 
-MAX_CHARS_HARD = 1500
-# Empirical TTS pacing: ~15 chars per second of speech for openai/playai voices.
 CHARS_PER_SEC = 15
+HARD_MAX = 2000
 
 
 def _transcript_for_clip(transcript: Transcript, clip: Clip) -> str:
@@ -23,7 +30,19 @@ def _transcript_for_clip(transcript: Transcript, clip: Clip) -> str:
     return " ".join(p for p in parts if p)
 
 
-def build_script(
+def _trim_at_sentence(text: str, max_chars: int) -> str:
+    text = text.strip()
+    if len(text) <= max_chars:
+        return text
+    truncated = text[:max_chars]
+    last_period = truncated.rfind(".")
+    if last_period > max_chars * 0.4:
+        return truncated[:last_period + 1]
+    last_space = truncated.rfind(" ")
+    return (truncated[:last_space] if last_space > 0 else truncated) + "."
+
+
+def build_per_clip_scripts(
     client: VideoDBClient,
     clips: list[Clip],
     transcript: Transcript,
@@ -31,67 +50,88 @@ def build_script(
     pr_title: str = "this change",
     pr_summary: str = "",
     model: str = "pro",
-) -> str:
-    """Compose narration sized to the total clip duration.
+) -> list[str]:
+    """Generate a single PR-wide script then split into per-clip chunks.
 
-    The narration must roughly fit the video runtime, otherwise TTS plays past
-    the last frame and the overlay sounds disconnected. Target length is
-    derived from clip total seconds at ~15 chars/sec, clamped to [200, 1500].
+    Single-pass approach so the LLM knows the full arc and avoids repeating
+    itself across overlapping moments. We ask for delimited chunks (one per
+    clip) and parse them out. Each chunk targets ~ duration*15 chars.
     """
-    total_seconds = sum(c.duration for c in clips)
-    target_chars = max(200, min(MAX_CHARS_HARD, int(total_seconds * CHARS_PER_SEC)))
-    target_seconds = int(total_seconds)
-    log.info(
-        "narration budget: clips=%d total=%.1fs target_chars=%d",
-        len(clips), total_seconds, target_chars,
-    )
+    if not clips:
+        return []
 
-    clip_blobs: list[str] = []
-    for i, c in enumerate(clips, 1):
-        spoken = _transcript_for_clip(transcript, c)
-        file_hint = f" (file {c.file_path})" if c.file_path else ""
-        blob = f"Clip {i} [{c.start:.1f}-{c.end:.1f}s {c.category}{file_hint}]: {c.evidence[:120]}"
-        if spoken:
-            blob += f" | spoken: {spoken[:200]}"
-        clip_blobs.append(blob)
-    clip_text = "\n".join(clip_blobs)
+    # Attach spoken transcript to each clip.
+    for c in clips:
+        c.spoken = _transcript_for_clip(transcript, c)
 
+    # Build a single prompt describing all clips as numbered chunks.
+    chunk_specs = []
+    for i, c in enumerate(clips):
+        target_s = max(3, int(c.duration * 0.8))  # leave breathing room
+        target_chars = max(60, int(target_s * CHARS_PER_SEC))
+        kind = {
+            "progress": "edit-and-save",
+            "speech":   "thinking-out-loud",
+            "research": "looking-things-up",
+            "stuck":    "stuck",
+        }.get(c.category, "general")
+        file_hint = f" in {c.file_path}" if c.file_path else ""
+        spoken = f' (I said: "{c.spoken[:200]}")' if c.spoken else ""
+        chunk_specs.append(
+            f"<chunk index={i} max_chars={target_chars} kind={kind}{file_hint}>{spoken}</chunk>"
+        )
+
+    total_target_chars = sum(max(60, int(c.duration * 0.8 * CHARS_PER_SEC)) for c in clips)
     prompt = (
-        f"Write a narration script of approximately {target_seconds} seconds, "
-        f"strictly under {target_chars} characters. "
-        "Speak in first person as the developer (use \"I\"). "
-        "Cover the reasoning behind the change, not a line-by-line diff walkthrough. "
-        "Lean on the user's own spoken words from the clips where they fit naturally. "
-        "Short sentences. Plain English. No markdown, no stage directions, no headings. "
-        f"If you can not fit everything in {target_chars} characters, cut detail rather than going over.\n\n"
-        f"PR title: {pr_title}\n"
-        f"PR summary: {pr_summary[:500]}\n\n"
-        f"Clips:\n{clip_text}\n\n"
-        "Output only the narration text. No preface, no closing remarks."
+        f"Write a PR walkthrough narration split across {len(clips)} sequential chunks. "
+        "Each chunk plays over a different clip of the recording, so DO NOT repeat content "
+        "from earlier chunks. Each chunk continues the story from the last. "
+        "Speak in first person (I/me). Sound like the developer thinking out loud. "
+        "Short sentences. Plain English. No markdown, no labels, no phrases like "
+        "'in this clip' or 'now I will'.\n\n"
+        f"PR: {pr_title}. {pr_summary[:200]}\n\n"
+        "Chunks (preserve order, do not exceed each max_chars):\n"
+        + "\n".join(chunk_specs)
+        + "\n\nFormat your output EXACTLY like this, one chunk per line, no extra text:\n"
+        "[0] <narration for chunk 0>\n"
+        "[1] <narration for chunk 1>\n"
+        f"... up to [{len(clips) - 1}]\n\n"
+        f"Total budget is about {total_target_chars} characters across all chunks. "
+        "The whole script should tell ONE coherent story arc with no repetition."
     )
 
     try:
-        text = client.generate_text(prompt=prompt, model=model)
+        raw = client.generate_text(prompt=prompt, model=model)
     except Exception as e:  # noqa: BLE001
-        log.warning("generate_text failed (%s); using stitched fallback", e)
-        spoken_bits = []
-        for c in clips:
-            s = _transcript_for_clip(transcript, c)
-            if s:
-                spoken_bits.append(s)
-        fallback = (
-            f"Here is what changed in {pr_title}. " + " ".join(spoken_bits)[: target_chars - 100]
-        )
-        return fallback[:target_chars]
+        log.warning("generate_text failed (%s); falling back to per-clip", e)
+        raw = ""
 
-    text = (text or "").strip()
-    if len(text) > target_chars:
-        # Cut at last sentence boundary before the limit.
-        truncated = text[:target_chars]
-        last_period = truncated.rfind(".")
-        if last_period > target_chars * 0.5:
-            text = truncated[:last_period + 1]
-        else:
-            text = truncated.rsplit(" ", 1)[0] + "."
-        log.info("trimmed script from %d -> %d chars", len(text), target_chars)
-    return text or f"Walkthrough of {pr_title}."
+    parsed = _parse_chunked_script(raw, len(clips)) if raw else [""] * len(clips)
+
+    # Per-clip fallback for any missing/empty chunks.
+    scripts: list[str] = []
+    for i, c in enumerate(clips):
+        text = parsed[i].strip() if i < len(parsed) else ""
+        target_chars = max(60, int(c.duration * 0.8 * CHARS_PER_SEC))
+        if not text:
+            text = c.spoken or c.evidence or "Continuing the change."
+        text = _trim_at_sentence(text, target_chars)
+        scripts.append(text)
+        log.info("clip %d narration: %d chars (target %d)", i, len(text), target_chars)
+    return scripts
+
+
+def _parse_chunked_script(raw: str, n: int) -> list[str]:
+    """Parse '[0] ... [1] ...' format into list of length n."""
+    import re
+    pattern = re.compile(r"\[(\d+)\]\s*", re.MULTILINE)
+    parts = pattern.split(raw)
+    # parts: ['preface', '0', 'text0', '1', 'text1', ...]
+    out: dict[int, str] = {}
+    for j in range(1, len(parts) - 1, 2):
+        try:
+            idx = int(parts[j])
+        except (ValueError, IndexError):
+            continue
+        out[idx] = parts[j + 1].strip()
+    return [out.get(i, "") for i in range(n)]

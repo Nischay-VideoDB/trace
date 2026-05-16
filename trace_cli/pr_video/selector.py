@@ -1,4 +1,9 @@
-"""Clip selector for PR video assembly (R4.1, R4.2, R4.9)."""
+"""Clip selector. Per-moment clips for tight narration sync.
+
+For PR video, each timeline moment that matters (progress on diff file,
+significant speech, research, stuck) becomes its own clip. Each clip then
+gets its own narration chunk so audio and video stay aligned.
+"""
 from __future__ import annotations
 
 import logging
@@ -12,11 +17,13 @@ log = logging.getLogger("trace.pr_video.selector")
 
 @dataclass
 class Clip:
+    """One narratable moment. evidence_text is what we feed the LLM for narration."""
     start: float
     end: float
     file_path: str | None
     category: str
     evidence: str
+    spoken: str = ""
 
     @property
     def duration(self) -> float:
@@ -28,7 +35,6 @@ class InsufficientContent(Exception):
 
 
 def _path_matches_diff(evidence_path: str, diff_paths: set[str]) -> str | None:
-    """Match a save event path (often absolute) against diff filenames."""
     if not evidence_path:
         return None
     base = os.path.basename(evidence_path)
@@ -42,128 +48,129 @@ def select_clips(
     timeline: Timeline,
     diff_files: list[str],
     *,
-    min_total: float = 30.0,
-    max_total: float = 90.0,
-    pad_seconds: float = 10.0,
-    short_session_threshold: float = 120.0,
-    speech_context_seconds: float = 10.0,
+    min_total: float = 15.0,
+    max_total: float = 120.0,
+    pad_seconds: float = 6.0,
+    min_clip_seconds: float = 5.0,
+    max_clip_seconds: float = 20.0,
 ) -> list[Clip]:
-    """Pick clips to cover the PR. Returns list ordered by start ascending.
+    """Pick per-moment clips ordered by start time.
 
-    Strategy:
-      0. If session is shorter than short_session_threshold seconds, return a
-         single clip covering the whole session. Best narration sync for a short
-         demo run; clip-stitching only kicks in for longer sessions.
-      1. Primary: progress moments whose evidence path matches a diff file,
-         padded by pad_seconds on both sides for editor context.
-      2. Per matched save: attach overlapping speech moments within
-         speech_context_seconds of the save as setup or verify context.
-      3. Fallback: any progress moment, then speech moments.
-      4. Trim to <= max_total seconds, descending recency, one per file when
-         possible (R4.2).
-      5. Raise InsufficientContent if can not reach min_total.
+    Each non-trivial timeline moment becomes one clip:
+      progress with matching diff file -> always include (priority)
+      progress without match -> include if room
+      speech with substantial text -> include if room (provides context)
+      research -> include if room (shows what user looked up)
+
+    Each clip padded by pad_seconds, clamped to [min_clip_seconds,
+    max_clip_seconds]. Adjacent clips of the same category merge if they
+    would overlap.
     """
     diff_set = set(diff_files)
     end_s = timeline.session_end_seconds
 
-    # Short-session path: one full-session clip. Narration syncs across whole run.
-    if end_s <= short_session_threshold:
-        # Find primary file: most-saved diff file across progress evidence
-        from collections import Counter
-        save_files = Counter()
-        for m in timeline.moments:
-            if m.category == "progress" and m.confidence > 0:
-                mp = _path_matches_diff(m.evidence, diff_set)
-                if mp:
-                    save_files[mp] += 1
-        primary = save_files.most_common(1)[0][0] if save_files else None
-        return [Clip(
-            start=0.0,
-            end=end_s,
-            file_path=primary,
-            category="progress",
-            evidence=f"full session ({end_s:.0f}s)",
-        )]
-
-    matched: list[Clip] = []
-    other_progress: list[Clip] = []
-    speech: list[Clip] = []
-
+    raw: list[Clip] = []
     for m in timeline.moments:
         if m.confidence == 0.0 and m.category == "progress":
-            # gap fill, skip
-            continue
-        clip = Clip(
-            start=max(0.0, m.start_seconds - pad_seconds),
-            end=min(end_s, m.end_seconds + pad_seconds),
-            file_path=None,
+            continue  # skip gap-fill
+
+        start = max(0.0, m.start_seconds - pad_seconds)
+        end = min(end_s, m.end_seconds + pad_seconds)
+        if end - start < min_clip_seconds:
+            # extend to min length, prefer extending end first
+            need = min_clip_seconds - (end - start)
+            end = min(end_s, end + need)
+            if end - start < min_clip_seconds:
+                start = max(0.0, start - (min_clip_seconds - (end - start)))
+        if end - start > max_clip_seconds:
+            end = start + max_clip_seconds
+
+        file_path = None
+        if m.category == "progress":
+            file_path = _path_matches_diff(m.evidence, diff_set)
+
+        raw.append(Clip(
+            start=start,
+            end=end,
+            file_path=file_path,
             category=m.category,
             evidence=m.evidence,
-        )
-        if m.category == "progress":
-            mp = _path_matches_diff(m.evidence, diff_set)
-            if mp:
-                clip.file_path = mp
-                matched.append(clip)
-            else:
-                other_progress.append(clip)
-        elif m.category == "speech":
-            speech.append(clip)
+        ))
 
-    # Attach speech context (setup + verify) around each matched save by
-    # extending its start/end to swallow nearby speech moments.
-    for save in matched:
-        for sp in speech:
-            if sp.start <= save.start and (save.start - sp.start) <= speech_context_seconds:
-                save.start = sp.start
-            if sp.end >= save.end and (sp.end - save.end) <= speech_context_seconds:
-                save.end = sp.end
+    # Step A: merge clips that overlap on source AND share category.
+    raw.sort(key=lambda c: c.start)
+    merged: list[Clip] = []
+    for c in raw:
+        if merged and merged[-1].end >= c.start and merged[-1].category == c.category:
+            merged[-1].end = max(merged[-1].end, c.end)
+            if not merged[-1].file_path:
+                merged[-1].file_path = c.file_path
+            if c.evidence and merged[-1].evidence != c.evidence:
+                merged[-1].evidence = (merged[-1].evidence + " | " + c.evidence)[:250]
+        else:
+            merged.append(c)
 
-    # Descending recency, one per file first
-    matched.sort(key=lambda c: c.start, reverse=True)
+    # Step B: drop speech clips contained inside (or mostly overlapping) a
+    # progress clip. The progress clip's narration already covers the moment;
+    # repeating it via the speech overlay just creates duplicate audio.
+    progress_spans = [(c.start, c.end) for c in merged if c.category == "progress"]
+    def _overlap(a0, a1, b0, b1) -> float:
+        return max(0.0, min(a1, b1) - max(a0, b0))
+
+    def _mostly_covered(c: Clip) -> bool:
+        for ps in progress_spans:
+            ov = _overlap(c.start, c.end, ps[0], ps[1])
+            if ov / max(0.01, c.duration) > 0.5:
+                return True
+        return False
+
+    merged = [c for c in merged if c.category != "speech" or not _mostly_covered(c)]
+
+    # Step C: enforce no significant cross-category overlap. If two clips of
+    # different categories overlap by more than overlap_tol seconds, the lower
+    # priority one is shrunk so its start/end fall outside the higher's span.
+    overlap_tol = 2.0
+    prio = {"progress": 4, "stuck": 3, "research": 2, "speech": 1}
+    merged.sort(key=lambda c: c.start)
+    for i, hi in enumerate(merged):
+        for lo in merged:
+            if lo is hi:
+                continue
+            if prio[lo.category] >= prio[hi.category]:
+                continue
+            if _overlap(hi.start, hi.end, lo.start, lo.end) <= overlap_tol:
+                continue
+            # Trim lo to the largest portion outside hi.
+            left = (lo.start, min(lo.end, hi.start))
+            right = (max(lo.start, hi.end), lo.end)
+            best = max([left, right], key=lambda p: p[1] - p[0])
+            lo.start, lo.end = best
+    # Drop anything that got squashed below min_clip_seconds.
+    merged = [c for c in merged if (c.end - c.start) >= min_clip_seconds * 0.5]
+
+    # Cap total runtime by dropping oldest non-matched clips first.
+    def _score(c: Clip) -> tuple[int, float]:
+        # higher first: matched progress > unmatched progress > research > speech, then recency
+        prio = {"progress": 4, "research": 2, "speech": 1, "stuck": 3}[c.category]
+        match_bonus = 1 if c.file_path else 0
+        return (prio * 2 + match_bonus, c.start)
+
+    merged.sort(key=_score, reverse=True)
     chosen: list[Clip] = []
-    seen_files: set[str] = set()
     total = 0.0
-    for c in matched:
-        if c.file_path in seen_files:
-            continue
+    for c in merged:
         if total + c.duration > max_total:
-            continue
-        chosen.append(c)
-        seen_files.add(c.file_path or "")
-        total += c.duration
-
-    # Fill with remaining matched
-    for c in matched:
-        if c in chosen:
-            continue
-        if total + c.duration > max_total:
-            continue
-        chosen.append(c)
-        total += c.duration
-
-    # Fallback: any progress
-    for c in other_progress:
-        if total >= min_total or total + c.duration > max_total:
-            continue
-        chosen.append(c)
-        total += c.duration
-
-    # Fallback: speech
-    for c in speech:
-        if total >= min_total or total + c.duration > max_total:
             continue
         chosen.append(c)
         total += c.duration
 
     if total < min_total:
-        # Final fallback: take whole session if short
         if end_s < min_total:
-            # session itself shorter than min: emit single clip covering all
+            # tiny session: one full clip
             return [Clip(start=0.0, end=end_s, file_path=None, category="progress", evidence="full session")]
         raise InsufficientContent(
             f"selected {total:.1f}s of clips, need >= {min_total}s "
-            f"(matched={len(matched)} other={len(other_progress)} speech={len(speech)})"
+            f"(candidates after merge: {len(merged)})"
         )
 
     chosen.sort(key=lambda c: c.start)

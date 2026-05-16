@@ -5,7 +5,7 @@ import logging
 from pathlib import Path
 
 from trace_cli.github.client import GitHubClient, validate_pr_url
-from trace_cli.pr_video.narration import build_script
+from trace_cli.pr_video.narration import build_per_clip_scripts
 from trace_cli.pr_video.render import RenderResult, render
 from trace_cli.pr_video.selector import InsufficientContent, select_clips
 from trace_cli.session.models import Transcript
@@ -59,15 +59,15 @@ def generate_pr_video(session_id: str, pr_url: str, *, dry_run: bool = False) ->
     clips = select_clips(timeline, diff_paths)
     log.info("selected %d clips totaling %.1fs", len(clips), sum(c.duration for c in clips))
 
-    # Narration
+    # Per-clip narration
     client = VideoDBClient()
     pr_title = f"PR #{pr.number}"
     pr_summary = ", ".join(f"{f['path']} (+{f['additions']} -{f['deletions']})" for f in files[:5])
-    script = build_script(client, clips, transcript, pr_title=pr_title, pr_summary=pr_summary)
-    log.info("narration script: %d chars", len(script))
+    scripts = build_per_clip_scripts(client, clips, transcript, pr_title=pr_title, pr_summary=pr_summary)
+    log.info("narration: %d chunks, total %d chars", len(scripts), sum(len(s) for s in scripts))
 
-    # Render + assemble Timeline
-    result = render(client, meta.video_id, clips, script)
+    # Render + assemble Timeline with per-clip overlays
+    result = render(client, meta.video_id, clips, scripts)
     log.info("PR video HLS URL: %s", result.hls_url)
 
     # Persist artifacts
