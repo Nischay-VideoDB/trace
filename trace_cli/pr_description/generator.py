@@ -47,6 +47,42 @@ def _all_transcript_text(transcript: Transcript) -> str:
     return " ".join(seg.text.strip() for seg in transcript.segments if seg.text.strip())
 
 
+def _summarize_long_transcript(
+    client: VideoDBClient,
+    transcript: Transcript,
+    *,
+    model: str = "pro",
+    chunk_chars: int = 3500,
+) -> str:
+    """For long sessions, page through transcript in chunks of ~3500 chars,
+    summarize each chunk, then summarize the summaries. Avoids LLM context
+    truncation that would silently drop 90% of a 2-hour session.
+    """
+    full = _all_transcript_text(transcript)
+    if len(full) <= chunk_chars:
+        return full
+
+    log.info("long transcript (%d chars): paging summary in chunks of %d", len(full), chunk_chars)
+    chunks: list[str] = []
+    for i in range(0, len(full), chunk_chars):
+        chunk = full[i:i + chunk_chars]
+        try:
+            summary = client.generate_text(
+                prompt=(
+                    "Summarize this slice of a developer's spoken transcript in 2-3 sentences. "
+                    "First person. Faithful only. Do not invent.\n\n"
+                    f"Transcript slice:\n{chunk}\n\nOutput only the summary."
+                ),
+                model=model,
+            ).strip()
+            if summary:
+                chunks.append(summary)
+        except Exception as e:  # noqa: BLE001
+            log.warning("transcript chunk summary failed (%s); using verbatim", e)
+            chunks.append(chunk[:500])
+    return " ".join(chunks)[:6000]
+
+
 def _stuck_moments_text(timeline: Timeline) -> list[str]:
     return [m.evidence[:160] for m in timeline.moments if m.category == "stuck" and m.evidence]
 
@@ -71,7 +107,7 @@ def build(
     model: str = "pro",
 ) -> PRDescription:
     bullets = _file_bullets(files)
-    spoken = _all_transcript_text(transcript)[:4000]
+    spoken = _summarize_long_transcript(client, transcript, model=model)
     stuck_bits = _stuck_moments_text(timeline)
     followups = _followup_quotes(transcript)
 

@@ -121,7 +121,7 @@ def run_indexing(session_id: str, *, store: SessionStore | None = None, scene_ti
     try:
         video = retry_sync(
             lambda: client.upload_file(upload_path, name=f"trace-{session_id[:8]}"),
-            max_attempts=3,
+            max_attempts=5,
             base_delay=2.0,
         )
     except VideoDBError as e:
