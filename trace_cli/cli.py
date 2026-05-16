@@ -123,8 +123,12 @@ def start(
 # ---------- stop ----------------------------------------------------------
 
 @app.command()
-def stop() -> None:
-    """Signal the active capture session to finalize."""
+def stop(
+    skip_index: bool = typer.Option(False, "--skip-index", help="Skip VideoDB upload + indexing"),
+) -> None:
+    """Signal the active capture session to finalize and run indexing pipeline."""
+    Credentials.require("VIDEODB_API_KEY")
+    from trace_cli.indexing.pipeline import IndexingError, run_indexing
     from trace_cli.session.manager import NoActiveSession, SessionManager
 
     mgr = SessionManager()
@@ -139,7 +143,42 @@ def stop() -> None:
     except Exception as e:
         console.print(f"[red]{e}[/red]")
         sys.exit(1)
-    console.print(f"[green]session {final.session_id} status={final.status}[/green]")
+    console.print(f"[green]capture finalized: status={final.status}[/green]")
+
+    if skip_index:
+        console.print("[yellow]--skip-index set; not uploading to VideoDB[/yellow]")
+        return
+
+    if final.status not in ("processing", "transcription_failed", "indexed"):
+        console.print(f"[yellow]capture status is {final.status}; not indexing[/yellow]")
+        return
+
+    console.print("[cyan]uploading to VideoDB and indexing...[/cyan]")
+    try:
+        indexed = run_indexing(final.session_id)
+    except IndexingError as e:
+        console.print(f"[red]indexing failed: {e}[/red]")
+        sys.exit(1)
+    console.print(
+        f"[green]indexed: video_id={indexed.video_id} scene_index_id={getattr(indexed, 'model_extra', {}).get('scene_index_id') or indexed.model_dump().get('scene_index_id')}[/green]"
+    )
+
+    # Build timeline from indexed session.
+    from trace_cli.timeline.build_for_session import build_timeline_for_session
+    try:
+        tl = build_timeline_for_session(indexed.session_id)
+    except Exception as e:  # noqa: BLE001
+        console.print(f"[red]timeline build failed: {e}[/red]")
+        sys.exit(1)
+    counts = {k: 0 for k in ("progress", "stuck", "research", "speech")}
+    for m in tl.moments:
+        counts[m.category] = counts.get(m.category, 0) + 1
+    console.print(
+        f"[green]timeline: {len(tl.moments)} moments "
+        f"(progress={counts['progress']} stuck={counts['stuck']} "
+        f"research={counts['research']} speech={counts['speech']})[/green]"
+    )
+    console.print(f"[green]final status: {indexed.status}[/green]")
 
 
 # ---------- generate ------------------------------------------------------
