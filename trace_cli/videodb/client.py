@@ -1,12 +1,12 @@
 """Single VideoDB facade. All vendor calls live here.
 
 This wrapper is the surface judges score for VideoDB depth (30% scorer).
-Every other module imports `VideoDBClient` from here — no direct `import videodb`
+Every other module imports `VideoDBClient` from here. No direct `import videodb`
 elsewhere. Keeps integration visible and testable.
 
 Surfaces used:
   - Connection.upload (post-session video archive)
-  - Collection.connect_rtstream (LIVE INGEST — mandatory hackathon req)
+  - Collection.connect_rtstream (LIVE INGEST, mandatory hackathon req)
   - RTStream.start/stop/export
   - RTStream.index_visuals / index_audio / index_spoken_words / index_scenes (prompts)
   - RTStream.search (live semantic + visual search → Reviewer Q&A, clip selection)
@@ -14,8 +14,8 @@ Surfaces used:
   - RTStream.generate_stream(start, end) (bounded clip URLs)
   - Video.index_spoken_words / index_scenes / search (post-stop video search)
   - Video.generate_stream (clip extraction for replay)
-  - Collection.generate_text (narration script — VideoDB-hosted LLM, no OpenAI dep)
-  - Collection.generate_voice (TTS narration — VideoDB-hosted)
+  - Collection.generate_text (narration script via VideoDB-hosted LLM, no OpenAI dep)
+  - Collection.generate_voice (TTS narration via VideoDB-hosted voices)
   - videodb.timeline.Timeline + VideoAsset + AudioAsset + TextAsset (PR video assembly)
   - timeline.generate_stream (final PR video HLS URL)
 """
@@ -150,7 +150,7 @@ class VideoDBClient:
         time_seconds: int = 10,
         frame_count: int = 3,
     ) -> str:
-        """Custom-prompt scene index — the depth lever for visual classification.
+        """Custom-prompt scene index. Depth lever for visual classification.
 
         Returns the scene index id for later search.
         """
