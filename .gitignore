@@ -1,0 +1,29 @@
+# Python
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+
+# venv
+.venv
+
+# secrets
+.env
+.env.local
+*.local
+
+# trace runtime data
+.trace-runtime/
+
+# editors
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+
+# test caches
+.pytest_cache/
+.hypothesis/
