@@ -188,11 +188,28 @@ def generate(
     session_id: str = typer.Argument(..., help="Session id (from `trace start` output)"),
     pr_url: str = typer.Argument(..., help="GitHub PR URL"),
     focus: bool = typer.Option(False, "--focus", help="Also post Focus Mode comment"),
+    dry_run: bool = typer.Option(False, "--dry-run", help="Render but do not post PR comment"),
 ) -> None:
-    """Generate narrated PR video + post artifacts to GitHub PR."""
+    """Generate narrated PR video and post it as a comment on the GitHub PR."""
     Credentials.require("VIDEODB_API_KEY", "GITHUB_TOKEN")
-    console.print(f"[yellow]TODO: generate for {session_id} -> {pr_url} (focus={focus})[/yellow]")
-    raise typer.Exit(code=1)
+    from trace_cli.pr_video.generator import generate_pr_video
+    from trace_cli.pr_video.selector import InsufficientContent
+
+    try:
+        result = generate_pr_video(session_id, pr_url, dry_run=dry_run)
+    except InsufficientContent as e:
+        console.print(f"[red]not enough session content for a PR video: {e}[/red]")
+        sys.exit(1)
+    except Exception as e:  # noqa: BLE001
+        console.print(f"[red]generate failed: {e}[/red]")
+        sys.exit(1)
+
+    console.print(f"[green]HLS URL:[/green] {result.hls_url}")
+    console.print(f"[green]clips:[/green] {result.clip_count} totaling {result.total_seconds:.1f}s")
+    if dry_run:
+        console.print("[yellow]dry-run; no PR comment posted[/yellow]")
+    else:
+        console.print("[green]posted comment to PR[/green]")
 
 
 @app.command()
