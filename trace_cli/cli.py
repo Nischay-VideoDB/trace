@@ -260,8 +260,15 @@ def qa_poll(
     pr_url: str = typer.Argument(..., help="PR to poll for @trace comments"),
     session_id: str = typer.Argument(..., help="Session bound to this PR"),
     interval: int = typer.Option(30, "--interval", help="Poll interval seconds"),
+    stop_after: int = typer.Option(0, "--stop-after", help="Exit after N seconds (0 = run forever)"),
 ) -> None:
     """Poll GitHub PR comments and answer @trace mentions."""
     Credentials.require("VIDEODB_API_KEY", "GITHUB_TOKEN")
-    console.print(f"[yellow]TODO: qa-poll {pr_url} session={session_id} every {interval}s[/yellow]")
-    raise typer.Exit(code=1)
+    from trace_cli.web.qa import poll_loop
+    console.print(f"[cyan]polling {pr_url} for @trace every {interval}s (session={session_id})[/cyan]")
+    poll_loop(
+        pr_url=pr_url,
+        session_id=session_id,
+        interval=float(interval),
+        stop_after=float(stop_after) if stop_after > 0 else None,
+    )
