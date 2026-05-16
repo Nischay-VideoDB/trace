@@ -56,6 +56,8 @@ class LiveIndexer(threading.Thread):
         *,
         chunk_seconds: int = 15,
         min_chunk_seconds: int = 8,
+        max_chunks: int = 240,
+        backoff_after: int = 20,
     ) -> None:
         super().__init__(name=f"live-{session_id[:8]}", daemon=True)
         self._sid = session_id
@@ -64,6 +66,9 @@ class LiveIndexer(threading.Thread):
         self._audio = audio_path
         self._chunk_seconds = chunk_seconds
         self._min_chunk_seconds = min_chunk_seconds
+        self._max_chunks = max_chunks
+        self._backoff_after = backoff_after
+        self._chunk_count = 0
         self._stop = threading.Event()
         self._last_cursor = 0.0
         self._client: VideoDBClient | None = None
@@ -114,10 +119,14 @@ class LiveIndexer(threading.Thread):
                 log.warning("VideoDB connect failed; skipping live indexing (%s)", e)
                 return
 
+        from trace_cli.utils.retry import retry_sync
         try:
-            video = self._client.upload_file(chunk_path, name=f"{self._sid[:8]}-chunk-{int(t_start)}")
+            video = retry_sync(
+                lambda: self._client.upload_file(chunk_path, name=f"{self._sid[:8]}-chunk-{int(t_start)}"),
+                max_attempts=3, base_delay=2.0,
+            )
         except Exception as e:  # noqa: BLE001
-            log.warning("chunk upload failed (%s)", e)
+            log.warning("chunk upload failed after retries (%s)", e)
             return
 
         scene_idx_id: str | None = None
@@ -146,9 +155,17 @@ class LiveIndexer(threading.Thread):
 
     def run(self) -> None:
         while not self._stop.is_set():
-            self._stop.wait(self._chunk_seconds)
+            # Slow down after backoff_after chunks to protect credits and
+            # avoid overwhelming the indexing queue on long sessions.
+            interval = self._chunk_seconds
+            if self._chunk_count >= self._backoff_after:
+                interval = max(self._chunk_seconds, 60)
+            self._stop.wait(interval)
             if self._stop.is_set():
                 break
+            if self._chunk_count >= self._max_chunks:
+                log.warning("live indexer hit max_chunks=%d; stopping live indexing", self._max_chunks)
+                return
             cur_dur = self._probe_duration(self._screen)
             if cur_dur - self._last_cursor < self._min_chunk_seconds:
                 continue
@@ -157,6 +174,7 @@ class LiveIndexer(threading.Thread):
             if chunk is None:
                 continue
             self._last_cursor = t_end
+            self._chunk_count += 1
             # Process in a thread so we don't block the cut loop on network IO.
             threading.Thread(
                 target=self._process_chunk,

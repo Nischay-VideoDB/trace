@@ -170,13 +170,41 @@ def build_per_clip_scripts(
         "One coherent story arc, no repetition, no hallucination."
     )
 
-    try:
-        raw = client.generate_text(prompt=prompt, model=model)
-    except Exception as e:  # noqa: BLE001
-        log.warning("generate_text failed (%s); falling back to per-clip", e)
-        raw = ""
-
-    parsed = _parse_chunked_script(raw, len(clips)) if raw else [""] * len(clips)
+    # For long sessions (many clips), batch into groups of 6 per LLM call to
+    # stay under context limits and keep narration coherent within each batch.
+    BATCH = 6
+    if len(clips) > BATCH:
+        log.info("long session: batching %d clips into groups of %d", len(clips), BATCH)
+        parsed: list[str] = []
+        # Re-build prompts per batch using the same chunk_specs slices.
+        for offset in range(0, len(clips), BATCH):
+            batch_specs = chunk_specs[offset:offset + BATCH]
+            batch_size = len(batch_specs)
+            batch_prompt = prompt.replace(
+                f"split across {len(clips)} sequential chunks",
+                f"split across {batch_size} sequential chunks (this is batch starting at clip {offset + 1})"
+            )
+            batch_prompt = batch_prompt.replace(
+                "\n".join(chunk_specs),
+                "\n".join(batch_specs),
+            )
+            batch_prompt = batch_prompt.replace(
+                f"... up to [{len(clips) - 1}]",
+                f"... up to [{batch_size - 1}]",
+            )
+            try:
+                raw_batch = client.generate_text(prompt=batch_prompt, model=model)
+            except Exception as e:  # noqa: BLE001
+                log.warning("batch %d generate_text failed (%s)", offset // BATCH, e)
+                raw_batch = ""
+            parsed.extend(_parse_chunked_script(raw_batch, batch_size) if raw_batch else [""] * batch_size)
+    else:
+        try:
+            raw = client.generate_text(prompt=prompt, model=model)
+        except Exception as e:  # noqa: BLE001
+            log.warning("generate_text failed (%s); falling back to per-clip", e)
+            raw = ""
+        parsed = _parse_chunked_script(raw, len(clips)) if raw else [""] * len(clips)
 
     # Per-clip fallback for any missing/empty chunks.
     scripts: list[str] = []

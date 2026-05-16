@@ -49,7 +49,8 @@ def select_clips(
     diff_files: list[str],
     *,
     min_total: float = 10.0,
-    max_total: float = 75.0,
+    max_total: float = 120.0,
+    max_clips: int = 12,
     pad_seconds: float = 2.0,
     min_clip_seconds: float = 3.0,
     max_clip_seconds: float = 12.0,
@@ -148,17 +149,21 @@ def select_clips(
     # Drop anything that got squashed below min_clip_seconds.
     merged = [c for c in merged if (c.end - c.start) >= min_clip_seconds * 0.5]
 
-    # Cap total runtime by dropping oldest non-matched clips first.
-    def _score(c: Clip) -> tuple[int, float]:
-        # higher first: matched progress > unmatched progress > research > speech, then recency
-        prio = {"progress": 4, "research": 2, "speech": 1, "stuck": 3}[c.category]
-        match_bonus = 1 if c.file_path else 0
-        return (prio * 2 + match_bonus, c.start)
+    # Importance-weighted selection: rank everything by score then take the
+    # top max_clips that fit in max_total. This handles long sessions where
+    # raw chronological selection would drop late saves.
+    def _score(c: Clip) -> tuple[int, int, float]:
+        prio = {"progress": 5, "stuck": 4, "research": 2, "speech": 1}[c.category]
+        match_bonus = 3 if c.file_path else 0
+        duration_bonus = min(2, int(c.duration / 4))  # longer = a bit more important
+        return (prio + match_bonus + duration_bonus, prio, -c.start)
 
     merged.sort(key=_score, reverse=True)
     chosen: list[Clip] = []
     total = 0.0
     for c in merged:
+        if len(chosen) >= max_clips:
+            break
         if total + c.duration > max_total:
             continue
         chosen.append(c)
