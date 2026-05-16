@@ -37,10 +37,17 @@ def start(
         help="Project directory to watch for file save events",
     ),
     no_mic: bool = typer.Option(False, "--no-mic", help="Disable microphone capture"),
+    live: bool = typer.Option(
+        False,
+        "--live",
+        help="Pseudo-live: stream chunks to VideoDB every 15s during capture",
+    ),
+    chunk_seconds: int = typer.Option(15, "--chunk-seconds", help="Live chunk size"),
 ) -> None:
     """Start a new capture session (screen + mic). Blocks until SIGINT or `trace stop`."""
     Credentials.require("VIDEODB_API_KEY")
     from trace_cli.capture.heartbeat import HeartbeatThread
+    from trace_cli.capture.live_indexer import LiveIndexer
     from trace_cli.capture.service import start_capture, stop_capture
     from trace_cli.capture.watchers import HyprctlPoller, InotifyWatcher
     from trace_cli.session.manager import ActiveSessionError, SessionManager
@@ -80,6 +87,16 @@ def start(
     hypr = HyprctlPoller(meta.session_id, store)
     hypr.start()
 
+    live_indexer = None
+    if live:
+        live_indexer = LiveIndexer(
+            meta.session_id, store, screen_path, audio_path,
+            chunk_seconds=chunk_seconds,
+        )
+        live_indexer.start()
+        store.update_metadata(meta.session_id, capture_mode="rtstream")
+        console.print(f"[magenta]live mode: indexing chunks every {chunk_seconds}s via VideoDB[/magenta]")
+
     stop_requested = {"flag": False}
 
     def _on_sig(signum, frame):  # noqa: ARG001
@@ -100,6 +117,8 @@ def start(
         hb.stop()
         ino.stop()
         hypr.stop()
+        if live_indexer is not None:
+            live_indexer.stop()
         try:
             video_path, real_audio_path = stop_capture(handles)
         except Exception as e:
