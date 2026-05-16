@@ -102,6 +102,7 @@ def generate_pr_video(session_id: str, pr_url: str, *, dry_run: bool = False) ->
     log.info("posted PR video comment: %s", comment_url)
 
     # Post contribution map comment
+    map_url: str | None = None
     if meta.project_dir:
         try:
             agent_edits = collect_agent_edits(
@@ -116,5 +117,20 @@ def generate_pr_video(session_id: str, pr_url: str, *, dry_run: bool = False) ->
             store.artifact_path(session_id, "contribution_map.md").write_text(map_body, encoding="utf-8")
         except Exception as e:  # noqa: BLE001
             log.warning("contribution map failed: %s", e)
+
+    # Append PR description (What/Why/Struggles/Follow-ups)
+    try:
+        from trace_cli.pr_description.generator import build as build_description
+        desc = build_description(
+            client, files, transcript, timeline,
+            pr_title=f"PR #{pr.number}",
+            video_url=result.hls_url,
+            contribution_url=map_url,
+        )
+        gh.append_description(pr_url, desc.body)
+        store.artifact_path(session_id, "pr_description.md").write_text(desc.body, encoding="utf-8")
+        log.info("appended PR description (%d chars)", len(desc.body))
+    except Exception as e:  # noqa: BLE001
+        log.warning("PR description append failed: %s", e)
 
     return result
