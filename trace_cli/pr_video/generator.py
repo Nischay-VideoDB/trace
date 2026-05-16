@@ -4,6 +4,11 @@ from __future__ import annotations
 import logging
 from pathlib import Path
 
+from datetime import datetime, timezone
+from pathlib import Path
+
+from trace_cli.contribution_map.mapper import classify, render_comment
+from trace_cli.contribution_map.scanner import collect_agent_edits
 from trace_cli.github.client import GitHubClient, validate_pr_url
 from trace_cli.pr_video.narration import build_per_clip_scripts
 from trace_cli.pr_video.render import RenderResult, render
@@ -91,9 +96,25 @@ def generate_pr_video(session_id: str, pr_url: str, *, dry_run: bool = False) ->
     if dry_run:
         return result
 
-    # Post PR comment
+    # Post PR video comment
     body = COMMENT_TEMPLATE.format(url=result.hls_url, n=result.clip_count, dur=result.total_seconds)
     comment_url = gh.post_comment(pr_url, body)
-    log.info("posted PR comment: %s", comment_url)
+    log.info("posted PR video comment: %s", comment_url)
+
+    # Post contribution map comment
+    if meta.project_dir:
+        try:
+            agent_edits = collect_agent_edits(
+                Path(meta.project_dir),
+                started_at=meta.started_at,
+                stopped_at=meta.stopped_at or datetime.now(timezone.utc),
+            )
+            contributions = classify(files, agent_edits)
+            map_body = render_comment(contributions)
+            map_url = gh.post_comment(pr_url, map_body)
+            log.info("posted contribution map: %s", map_url)
+            store.artifact_path(session_id, "contribution_map.md").write_text(map_body, encoding="utf-8")
+        except Exception as e:  # noqa: BLE001
+            log.warning("contribution map failed: %s", e)
 
     return result
