@@ -44,20 +44,46 @@ def select_clips(
     *,
     min_total: float = 30.0,
     max_total: float = 90.0,
-    pad_seconds: float = 4.0,
+    pad_seconds: float = 10.0,
+    short_session_threshold: float = 120.0,
+    speech_context_seconds: float = 10.0,
 ) -> list[Clip]:
     """Pick clips to cover the PR. Returns list ordered by start ascending.
 
     Strategy:
-      1. Primary: progress moments whose evidence path matches a diff file.
-      2. Fallback: any progress moment, then speech moments.
-      3. Pad each clip by pad_seconds on each side, clamped to session bounds.
+      0. If session is shorter than short_session_threshold seconds, return a
+         single clip covering the whole session. Best narration sync for a short
+         demo run; clip-stitching only kicks in for longer sessions.
+      1. Primary: progress moments whose evidence path matches a diff file,
+         padded by pad_seconds on both sides for editor context.
+      2. Per matched save: attach overlapping speech moments within
+         speech_context_seconds of the save as setup or verify context.
+      3. Fallback: any progress moment, then speech moments.
       4. Trim to <= max_total seconds, descending recency, one per file when
          possible (R4.2).
       5. Raise InsufficientContent if can not reach min_total.
     """
     diff_set = set(diff_files)
     end_s = timeline.session_end_seconds
+
+    # Short-session path: one full-session clip. Narration syncs across whole run.
+    if end_s <= short_session_threshold:
+        # Find primary file: most-saved diff file across progress evidence
+        from collections import Counter
+        save_files = Counter()
+        for m in timeline.moments:
+            if m.category == "progress" and m.confidence > 0:
+                mp = _path_matches_diff(m.evidence, diff_set)
+                if mp:
+                    save_files[mp] += 1
+        primary = save_files.most_common(1)[0][0] if save_files else None
+        return [Clip(
+            start=0.0,
+            end=end_s,
+            file_path=primary,
+            category="progress",
+            evidence=f"full session ({end_s:.0f}s)",
+        )]
 
     matched: list[Clip] = []
     other_progress: list[Clip] = []
@@ -83,6 +109,15 @@ def select_clips(
                 other_progress.append(clip)
         elif m.category == "speech":
             speech.append(clip)
+
+    # Attach speech context (setup + verify) around each matched save by
+    # extending its start/end to swallow nearby speech moments.
+    for save in matched:
+        for sp in speech:
+            if sp.start <= save.start and (save.start - sp.start) <= speech_context_seconds:
+                save.start = sp.start
+            if sp.end >= save.end and (sp.end - save.end) <= speech_context_seconds:
+                save.end = sp.end
 
     # Descending recency, one per file first
     matched.sort(key=lambda c: c.start, reverse=True)
