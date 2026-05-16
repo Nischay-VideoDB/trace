@@ -238,10 +238,28 @@ def replay(
     start: int = typer.Option(..., "--start"),
     end: int = typer.Option(..., "--end"),
 ) -> None:
-    """Decision Replay: show edit history for a file/line range."""
+    """Decision Replay: show edit history for a file/line range (CLI form)."""
     Credentials.require("VIDEODB_API_KEY")
-    console.print(f"[yellow]TODO: replay {session_id} {file}:{start}-{end}[/yellow]")
-    raise typer.Exit(code=1)
+    from trace_cli.decision_replay.service import (
+        FileNotInSession, InvalidRange, query as replay_query,
+    )
+    try:
+        intervals = replay_query(session_id, file, start, end)
+    except InvalidRange as e:
+        console.print(f"[red]invalid range: {e}[/red]")
+        sys.exit(1)
+    except FileNotInSession as e:
+        console.print(f"[red]{e}[/red]")
+        sys.exit(1)
+
+    if not intervals:
+        console.print("[yellow]no edit history found for that file/range[/yellow]")
+        return
+
+    console.print(f"[green]{len(intervals)} intervals[/green]")
+    for iv in intervals:
+        console.print(f"  [{iv.start_seconds:.1f}-{iv.end_seconds:.1f}s] {iv.description}")
+        console.print(f"    clip: {iv.clip_url}")
 
 
 @app.command()
