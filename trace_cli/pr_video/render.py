@@ -14,9 +14,15 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass
 
+import os
+
 from videodb.editor import (
     AudioAsset,
+    Background,
     Clip,
+    Font,
+    Position,
+    TextAsset,
     Timeline,
     Track,
     TrackItem,
@@ -25,6 +31,21 @@ from videodb.editor import (
 
 from trace_cli.pr_video.selector import Clip as SelectedClip
 from trace_cli.videodb.client import VideoDBClient
+
+
+_CATEGORY_BADGE = {
+    "progress": "EDIT",
+    "speech":   "EXPLAIN",
+    "research": "RESEARCH",
+    "stuck":    "STUCK",
+}
+
+
+def _badge_text(sc: SelectedClip) -> str:
+    label = _CATEGORY_BADGE.get(sc.category, sc.category.upper())
+    if sc.file_path:
+        return f"trace - {label} - {os.path.basename(sc.file_path)}"
+    return f"trace - {label}"
 
 log = logging.getLogger("trace.pr_video.render")
 
@@ -102,6 +123,7 @@ def render(
     tl = Timeline(client._conn)
     video_track = Track(z_index=0)
     audio_track = Track(z_index=1)
+    badge_track = Track(z_index=2)
 
     cursor_int = 0  # Track.add_clip takes integer start
     cursor_float = 0.0  # cumulative float for narration alignment
@@ -121,11 +143,24 @@ def render(
             a_clip = Clip(asset=a_asset, duration=alen)
             audio_track.add_clip(cursor_int, a_clip)
 
+        # Badge overlay: category + filename at top-left throughout clip.
+        try:
+            badge = TextAsset(
+                text=_badge_text(clips[i]),
+                font=Font(family="Clear Sans", size=32, color="#FFFFFF", opacity=1.0),
+                background=Background(width=0.0, height=0.0, color="#000000", opacity=0.7),
+            )
+            badge_clip = Clip(asset=badge, duration=output_dur, position=Position.top_left, opacity=0.9)
+            badge_track.add_clip(cursor_int, badge_clip)
+        except Exception as e:  # noqa: BLE001
+            log.debug("badge skipped for clip %d: %s", i, e)
+
         cursor_float += output_dur
         cursor_int = int(round(cursor_float))
 
     tl.add_track(video_track)
     tl.add_track(audio_track)
+    tl.add_track(badge_track)
 
     log.info(
         "timeline: %d clips, total runtime %.1fs (video=%d items, audio=%d items)",
