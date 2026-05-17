@@ -128,8 +128,11 @@ def render_comment(contributions: list[FileContribution]) -> str:
             total[k] += v
 
     grand = sum(total.values()) or 1
-    pct_ai = round(100 * (total["agent"] + 0.5 * total["mixed"]) / grand)
-    pct_h = round(100 * (total["human"] + 0.5 * total["mixed"]) / grand)
+    observed = grand - total["unknown"]
+    obs_denom = observed or 1
+    pct_ai = round(100 * (total["agent"] + 0.5 * total["mixed"]) / obs_denom)
+    pct_h = round(100 * (total["human"] + 0.5 * total["mixed"]) / obs_denom)
+    pct_unk = round(100 * total["unknown"] / grand)
 
     lines = [
         "## trace contribution map",
@@ -137,7 +140,7 @@ def render_comment(contributions: list[FileContribution]) -> str:
         f"AI vs human attribution for the {grand} added lines in this PR. "
         f"Evidence: screen activity, voice transcript, and scene labels from the recorded session.",
         "",
-        f"**Overall: ~{pct_ai}% AI / ~{pct_h}% human**",
+        f"**Overall: ~{pct_ai}% AI / ~{pct_h}% human** (of {observed} observed lines; {pct_unk}% not captured in session)",
         "",
         "| file | human | agent | mixed | unknown |",
         "|---|---:|---:|---:|---:|",
