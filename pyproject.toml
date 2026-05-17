@@ -32,6 +32,9 @@ trace = "trace_cli.cli:app"
 [tool.uv]
 package = true
 
+[tool.uv.sources]
+videodb = { git = "https://github.com/video-db/videodb-python.git", rev = "hackathon" }
+
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"

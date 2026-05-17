@@ -642,7 +642,7 @@ requires-dist = [
     { name = "rich", specifier = ">=13.9" },
     { name = "typer", specifier = ">=0.16" },
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.32" },
-    { name = "videodb", specifier = ">=0.4.5" },
+    { name = "videodb", git = "https://github.com/video-db/videodb-python.git?rev=hackathon" },
 ]
 
 [package.metadata.requires-dev]
@@ -740,16 +740,12 @@ wheels = [
 [[package]]
 name = "videodb"
 version = "0.4.5"
-source = { registry = "https://pypi.org/simple" }
+source = { git = "https://github.com/video-db/videodb-python.git?rev=hackathon#75bbc641b4f5b0c2448028998dcf99393650be5d" }
 dependencies = [
     { name = "backoff" },
     { name = "requests" },
     { name = "tqdm" },
     { name = "websockets" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/6f/cc/f95d0e9e2253652d69e985c0e6762cb50075208d4359ab3014fa82928190/videodb-0.4.5.tar.gz", hash = "sha256:a64ba5b28936b2d6b4e63cb526b547527206e7e922e96c8883f87340837824a7", size = 66070, upload-time = "2026-04-15T11:44:31.128Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/f6/ea/b2185dade931d24fd164de8918e7a06b77dce702fb521860fd592f4823bf/videodb-0.4.5-py3-none-any.whl", hash = "sha256:7166f494111491ef914ca74e9722634f735eebc9e3e2bb0193c2298d1282fa6a", size = 70286, upload-time = "2026-04-15T11:44:29.707Z" },
 ]
 
 [[package]]

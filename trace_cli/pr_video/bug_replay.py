@@ -172,7 +172,7 @@ def render_bug_clip(
     narration_text = narration_text[:600]
 
     try:
-        audio = client.generate_voice(text=narration_text)
+        audio = client.generate_voice(text=narration_text, voice="male_1")
         audio_id = getattr(audio, "id", "")
         audio_len = float(getattr(audio, "length", 0.0) or 0.0)
     except Exception as e:  # noqa: BLE001

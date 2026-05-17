@@ -72,6 +72,9 @@ def start(
     from trace_cli.session.manager import ActiveSessionError, SessionManager
     from trace_cli.session.store import SessionStore
 
+    if not (project / ".git").exists():
+        console.print(f"[yellow]warning: {project} has no .git — file saves won't be tracked correctly. cd into your project repo before running trace start.[/yellow]")
+
     mgr = SessionManager()
     try:
         meta = mgr.create(project_dir=project)
@@ -248,6 +251,28 @@ def generate(
         console.print("[yellow]dry-run; no PR comment posted[/yellow]")
     else:
         console.print("[green]posted comment to PR[/green]")
+
+
+@app.command()
+def ship(
+    session_id: str = typer.Argument(..., help="Session id (from `trace start` output)"),
+    base: str = typer.Option(None, "--base", help="Base branch (default: repo default)"),
+    no_commit: bool = typer.Option(False, "--no-commit", help="Refuse to auto-commit uncommitted changes"),
+    repo: Path = typer.Option(None, "--repo", help="Override session's project_dir (use this repo for the PR)"),
+) -> None:
+    """End-to-end: auto-commit + push + open PR (AI title/body) + run generate."""
+    Credentials.require("VIDEODB_API_KEY", "GITHUB_TOKEN")
+    from trace_cli.pr_video.ship import ShipError, ship as ship_fn
+    try:
+        result = ship_fn(session_id, base=base, auto_commit=not no_commit, repo_override=repo)
+    except ShipError as e:
+        console.print(f"[red]ship failed: {e}[/red]")
+        sys.exit(1)
+    console.print(f"\n[green]PR:[/green] {result.pr_url}")
+    console.print(f"[green]branch:[/green] {result.branch}")
+    if result.commit_sha:
+        console.print(f"[green]commit:[/green] {result.commit_sha[:10]}")
+    console.print(f"[green]video:[/green] {result.render.hls_url}")
 
 
 @app.command()
