@@ -130,17 +130,12 @@ def collect_agent_edits(
         if _AI_KEYWORDS.search(text):
             s = float(getattr(seg, "start_seconds", 0))
             e = float(getattr(seg, "end_seconds", s + 5))
-            # Expand window ±60s around keyword utterance.
-            ai_windows.append((max(0, s - 60), min(session_duration, e + 60)))
+            # Expand window ±30s around keyword utterance.
+            ai_windows.append((max(0, s - 30), min(session_duration, e + 30)))
 
-    # ── 4. Build AI-signal windows from 'research' timeline moments ──────────
-    for moment in getattr(timeline, "moments", []) or []:
-        if getattr(moment, "category", "") == "research":
-            s = float(getattr(moment, "start_seconds", 0))
-            e = float(getattr(moment, "end_seconds", s))
-            ai_windows.append((s, e))
+    # Research moments are NOT an AI-writing signal (reading docs != agent wrote code).
 
-    log.info("ai_windows: %d (scenes+transcript+timeline)", len(ai_windows))
+    log.info("ai_windows: %d (scenes+transcript)", len(ai_windows))
 
     # ── 5. Classify each saved file ──────────────────────────────────────────
     agent_files: dict[str, set[str]] = {}

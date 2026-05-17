@@ -118,7 +118,7 @@ def classify(
 def render_comment(contributions: list[FileContribution]) -> str:
     """Markdown summary suitable for a PR comment."""
     if not contributions:
-        return "**@trace contribution map**: no diff to classify."
+        return "**trace contribution map**: no diff to classify."
 
     total = {"human": 0, "agent": 0, "mixed": 0, "unknown": 0}
     for c in contributions:
@@ -149,8 +149,8 @@ def render_comment(contributions: list[FileContribution]) -> str:
         )
     lines.append("")
     lines.append(
-        "_human_ = saved during session, no AI signal detected. "
-        "_agent_ = saved while AI assistant visible on screen or invoked by voice. "
-        "_unknown_ = file not observed during capture window."
+        "_agent_ = file saved while AI assistant on screen or invoked by voice. "
+        "_human_ = file saved during session, no AI signal. "
+        "_unknown_ = file not written during capture window (added outside session or by CI)."
     )
     return "\n".join(lines)
