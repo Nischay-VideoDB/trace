@@ -87,19 +87,18 @@ class VideoDBClient:
     # ---- sandbox lifecycle ---------------------------------------------
 
     def ensure_sandbox(self, tier: str = "small"):
-        """Spin up (or reuse) a compute sandbox for GenAI workloads.
-
-        Checks for any existing active sandbox first to avoid creating duplicates
-        and burning credits unnecessarily.
-        """
+        """Spin up (or reuse) a compute sandbox for GenAI workloads."""
         # Check if our cached sandbox is still alive.
         if self._sandbox is not None:
             try:
                 self._sandbox.refresh()
-                if getattr(self._sandbox, "is_active", False) or getattr(self._sandbox, "status", "") == "active":
+                cached_tier = str(getattr(self._sandbox, "tier", "")).lower()
+                tier_ok = (tier == "small") or ("medium" in cached_tier)
+                if tier_ok and (getattr(self._sandbox, "is_active", False) or getattr(self._sandbox, "status", "") == "active"):
                     return self._sandbox
             except Exception:  # noqa: BLE001
-                self._sandbox = None
+                pass
+            self._sandbox = None
 
         # Reuse any already-active sandbox from the account — only if tier matches.
         try:
@@ -221,37 +220,51 @@ class VideoDBClient:
         *,
         prompt: str,
         time_seconds: int = 10,
-        frame_count: int = 3,
-        sandbox_id: str | None = None,
     ) -> str:
-        """Custom-prompt scene index. Depth lever for visual classification.
+        """Custom-prompt scene index with sandbox VLM.
 
-        Pass sandbox_id to route through a compute sandbox for better VLM models.
-        Returns the scene index id for later search.
+        Uses GEMMA_4_E2B (small tier) → GEMMA_4_26B (medium) → no model as fallback.
+        Returns scene index id.
         """
-        try:
-            kwargs: dict[str, Any] = dict(
-                extraction_type=SceneExtractionType.time_based,
-                extraction_config={"time": time_seconds, "frame_count": frame_count},
-                prompt=prompt,
-            )
-            if sandbox_id:
-                kwargs["sandbox_id"] = sandbox_id
-                # Try 26B first (compatible with medium tier); fall back to 31B.
-                for model in (SandboxModel.GEMMA_4_26B, SandboxModel.GEMMA_4_31B):
-                    try:
-                        kwargs["model_name"] = model
-                        return video.index_scenes(**kwargs)
-                    except Exception as e:  # noqa: BLE001
-                        if "not compatible" in str(e).lower() or "invalid" in str(e).lower():
-                            log.warning("model %s rejected (%s); trying next", model, e)
-                            continue
-                        raise _wrap(e) from e
-                # Both models failed — try without model_name (default VLM)
-                kwargs.pop("model_name", None)
-            return video.index_scenes(**kwargs)
-        except Exception as e:  # noqa: BLE001
-            raise _wrap(e) from e
+        base_kwargs: dict[str, Any] = dict(
+            extraction_type=SceneExtractionType.time_based,
+            extraction_config={
+                "time": time_seconds,
+                "select_frames": ["first", "last"],
+            },
+            prompt=prompt,
+        )
+
+        # Model ladder: small-tier first (E2B), medium if needed (26B), bare fallback.
+        attempts = [
+            (SandboxModel.GEMMA_4_E2B, "small"),
+            (SandboxModel.GEMMA_4_26B, "medium"),
+            (None, None),
+        ]
+        last_exc: Exception | None = None
+        for model, tier in attempts:
+            try:
+                kwargs = dict(base_kwargs)
+                if model is not None:
+                    sandbox = self.ensure_sandbox(tier=tier)
+                    kwargs["model_name"] = model
+                    kwargs["sandbox_id"] = sandbox.id
+                log.info("index_scenes: model=%s", model)
+                return video.index_scenes(**kwargs)
+            except Exception as e:  # noqa: BLE001
+                msg = str(e).lower()
+                if "already exists" in msg:
+                    import re as _re
+                    m = _re.search(r"id\s+([a-f0-9]+)", str(e))
+                    if m:
+                        log.info("scene index already exists: %s", m.group(1))
+                        return m.group(1)
+                if any(t in msg for t in ("not compatible", "invalid", "not supported", "failed")):
+                    log.warning("model %s rejected (%s); trying next", model, e)
+                    last_exc = e
+                    continue
+                raise _wrap(e) from e
+        raise _wrap(last_exc or Exception("all scene index attempts failed")) from last_exc
 
     # ---- Search --------------------------------------------------------
 
@@ -328,35 +341,22 @@ class VideoDBClient:
             raise _wrap(e) from e
 
     def generate_voice(self, text: str, *, voice: str = "Default"):
-        """VideoDB-hosted TTS via sandbox OmniVoice.
-
-        Requires hackathon compute credits to be active on the account.
-        If the quota error persists after credits are claimed, the plan_id
-        needs to be upgraded by the VideoDB team (contact@videodb.io).
-        """
+        """TTS via sandbox OmniVoice. Returns Audio with .id and .length."""
         sandbox = self.ensure_sandbox(tier="small")
         try:
-            log.info("generate_voice via sandbox OmniVoice (sandbox=%s)", sandbox.id)
-            kwargs: dict = dict(
+            log.info("generate_voice via OmniVoice (sandbox=%s)", sandbox.id)
+            audio = self._collection.generate_voice(
                 text=text,
+                voice_name=voice,
                 model_name=SandboxModel.OMNIVOICE,
                 sandbox_id=sandbox.id,
                 wait=True,
                 timeout=900,
                 poll_interval=5,
             )
-            # Pin voice if OmniVoice supports voice_name parameter.
-            if voice and voice != "Default":
-                kwargs["voice_name"] = voice
-            return self._collection.generate_voice(**kwargs)
+            log.info("generate_voice done: id=%s len=%ss", getattr(audio, "id", "?"), getattr(audio, "length", "?"))
+            return audio
         except Exception as e:  # noqa: BLE001
-            msg = str(e)
-            if "maximum limit" in msg or "Voice generation" in msg:
-                raise _wrap(Exception(
-                    "Voice generation quota exceeded. Your account plan_id is still Free_v1. "
-                    "Contact contact@videodb.io or the hackathon Discord to upgrade your plan "
-                    "so sandbox OmniVoice is unblocked."
-                )) from e
             raise _wrap(e) from e
 
     # ---- Stream / clip URLs --------------------------------------------
