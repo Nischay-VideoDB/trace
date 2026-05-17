@@ -125,13 +125,11 @@ class GitHubClient:
         except GithubException as e:
             raise GitHubError(str(e)) from e
 
-    def append_description(self, pr_url: str, addendum: str) -> None:
-        """R9.8/9.9: append below existing, preserve original verbatim."""
+    def set_description(self, pr_url: str, body: str) -> None:
+        """Replace PR description entirely."""
         ref = validate_pr_url(pr_url)
         pr = self._pr(ref)
-        existing = pr.body or ""
-        new_body = f"{existing}\n\n{addendum}" if existing.strip() else addendum
         try:
-            pr.edit(body=new_body)
+            pr.edit(body=body)
         except GithubException as e:
             raise GitHubError(str(e)) from e

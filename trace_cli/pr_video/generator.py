@@ -154,8 +154,9 @@ def generate_pr_video(session_id: str, pr_url: str, *, dry_run: bool = False) ->
             video_url=result.hls_url,
             contribution_url=map_url,
             preview_thumb_url=preview_thumb_url,
+            pr_ref=pr,
         )
-        gh.append_description(pr_url, desc.body)
+        gh.set_description(pr_url, desc.body)
         store.artifact_path(session_id, "pr_description.md").write_text(desc.body, encoding="utf-8")
         log.info("appended PR description (%d chars)", len(desc.body))
     except Exception as e:  # noqa: BLE001
