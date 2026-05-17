@@ -28,7 +28,7 @@ log = logging.getLogger("trace.qa")
 
 MENTION_RE = re.compile(r"/trace\b\s*(.+)", re.IGNORECASE | re.DOTALL)
 MAX_QUESTION_CHARS = 1000
-MAX_REPLY_CHARS = 500
+MAX_REPLY_CHARS = 2000
 RELEVANCE_THRESHOLD = 0.2
 MAX_CLIPS = 3
 
@@ -76,6 +76,35 @@ def _spoken_hits(client: VideoDBClient, video, query: str) -> list[SearchHit]:
     return out
 
 
+def _clean_scene_text(raw: str) -> str:
+    """Convert raw JSON scene description to readable text."""
+    import json as _json
+    raw = raw.strip()
+    # strip code fences
+    if raw.startswith("```"):
+        raw = re.sub(r"^```[a-z]*\n?", "", raw)
+        raw = re.sub(r"\n?```$", "", raw)
+        raw = raw.strip()
+    try:
+        obj = _json.loads(raw)
+        parts: list[str] = []
+        label = obj.get("label") or obj.get("category") or ""
+        if label:
+            parts.append(label)
+        files = obj.get("files") or []
+        if files:
+            parts.append("editing " + ", ".join(str(f).split("/")[-1] for f in files[:3]))
+        fns = obj.get("functions") or []
+        if fns:
+            parts.append("fn: " + ", ".join(str(f) for f in fns[:3]))
+        errors = obj.get("errors") or []
+        if errors:
+            parts.append("errors: " + "; ".join(str(e)[:60] for e in errors[:2]))
+        return ". ".join(parts) if parts else raw[:120]
+    except Exception:
+        return raw[:120]
+
+
 def _scene_hits(client: VideoDBClient, video, query: str) -> list[SearchHit]:
     out: list[SearchHit] = []
     try:
@@ -89,7 +118,8 @@ def _scene_hits(client: VideoDBClient, video, query: str) -> list[SearchHit]:
         return out
     shots = getattr(sr, "get_shots", lambda: [])() or []
     for sh in shots[:8]:
-        text = (getattr(sh, "text", "") or "").strip()
+        raw_text = (getattr(sh, "text", "") or "").strip()
+        text = _clean_scene_text(raw_text)
         out.append(SearchHit(
             start=float(getattr(sh, "start", 0.0) or 0.0),
             end=float(getattr(sh, "end", 0.0) or 0.0),
@@ -113,17 +143,18 @@ def _dedupe_by_window(hits: list[SearchHit], window: float = 8.0) -> list[Search
 def build_reply(question: str, hits: list[SearchHit], clip_urls: list[str]) -> str:
     if not hits:
         return (
-            f"**trace-bot**: I could not find a matching moment in the session for "
-            f"`{question[:120]}`. The session may not have covered that part."
-        )[:MAX_REPLY_CHARS]
+            f"**trace-bot**: no matching moment found for `{question[:120]}`."
+        )
 
-    lines = [f"**trace-bot** answer for: _{question[:160]}_", ""]
+    lines = [f"**trace-bot** — _{question[:160]}_", ""]
     for h, url in zip(hits, clip_urls):
-        snippet = h.text[:140].replace("\n", " ")
-        lines.append(f"- [{h.start:.0f}-{h.end:.0f}s {h.kind}] {snippet}")
-        lines.append(f"  - clip: {url}")
-    body = "\n".join(lines)
-    return body[:MAX_REPLY_CHARS] if len(body) > MAX_REPLY_CHARS else body
+        snippet = h.text[:160].replace("\n", " ")
+        ts = f"{h.start:.0f}s–{h.end:.0f}s"
+        lines.append(f"**[{ts}]** {snippet}")
+        lines.append(f"> {url}")
+        lines.append("")
+    body = "\n".join(lines).rstrip()
+    return body[:MAX_REPLY_CHARS]
 
 
 def answer_one(
