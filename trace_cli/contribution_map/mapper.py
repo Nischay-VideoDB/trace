@@ -99,8 +99,19 @@ def classify(
 
         # Check for mixed sentinel first (both human and agent saves observed).
         agent_val = next((v for k, v in agent_edits_by_file.items() if os.path.basename(k) == base), None)
-        if agent_val == {"__mixed__"}:
-            file_label = "mixed"
+        mixed_ratio: float | None = None  # agent fraction of saves, None if not mixed
+        if agent_val and agent_val != {"__agent__"}:
+            sentinel = next(iter(agent_val), "")
+            if sentinel.startswith("__mixed__"):
+                try:
+                    frac_str = sentinel[len("__mixed__"):]  # "1/2"
+                    num, den = frac_str.split("/")
+                    mixed_ratio = int(num) / int(den)
+                except Exception:
+                    mixed_ratio = 0.5
+                file_label = "mixed"
+            else:
+                file_label = "agent"
         elif base in agent_basenames:
             file_label = "agent"
         elif base in saved_basenames:
@@ -109,9 +120,19 @@ def classify(
             file_label = "unknown"
 
         added = parse_added_lines(patch)
-        for line_no, text in added:
-            contribution.labels.append(LineLabel(line=line_no, text=text, label=file_label))
-            contribution.counts[file_label] += 1
+        n_lines = len(added)
+        if file_label == "mixed" and mixed_ratio is not None and n_lines > 0:
+            # Split lines proportionally by save ratio instead of 50/50.
+            agent_lines = round(n_lines * mixed_ratio)
+            human_lines = n_lines - agent_lines
+            contribution.counts["agent"] += agent_lines
+            contribution.counts["human"] += human_lines
+            for line_no, text in added:
+                contribution.labels.append(LineLabel(line=line_no, text=text, label="mixed"))
+        else:
+            for line_no, text in added:
+                contribution.labels.append(LineLabel(line=line_no, text=text, label=file_label))
+                contribution.counts[file_label] += 1
 
         out.append(contribution)
     return out

@@ -142,20 +142,22 @@ def collect_agent_edits(
     # Claude edits later). Track both counts; caller uses __mixed__ sentinel.
     agent_files: dict[str, set[str]] = {}
     for rel_path, save_offsets in session_saves.items():
-        has_agent = False
-        has_human = False
+        agent_saves = 0
+        human_saves = 0
         for offset in save_offsets:
             in_ai = any(ws - 5 <= offset <= we + 5 for ws, we in ai_windows)
             if in_ai:
-                has_agent = True
+                agent_saves += 1
                 log.debug("agent signal: %s saved at %.1fs", rel_path, offset)
             else:
-                has_human = True
-        if has_agent and has_human:
-            agent_files[rel_path] = {"__mixed__"}
-        elif has_agent:
+                human_saves += 1
+        if agent_saves and human_saves:
+            total_saves = agent_saves + human_saves
+            # Store ratio as "agent_saves/total_saves" so mapper can split lines proportionally.
+            agent_files[rel_path] = {f"__mixed__{agent_saves}/{total_saves}"}
+        elif agent_saves:
             agent_files[rel_path] = {"__agent__"}
-        # has_human only → not in agent_files → mapper labels as human
+        # human only → not in agent_files → mapper labels as human
 
     log.info(
         "agent files: %d / %d total saved files",
