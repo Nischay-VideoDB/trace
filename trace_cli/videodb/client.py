@@ -82,57 +82,55 @@ class VideoDBClient:
         except Exception as e:  # noqa: BLE001
             raise _wrap(e) from e
         log.info("connected to VideoDB collection=%s", self._collection.id)
-        self._sandbox = None  # lazy spun-up when voice generation needs it
+        self._sandbox: dict[str, object] = {}  # tier -> sandbox object
 
     # ---- sandbox lifecycle ---------------------------------------------
 
     def ensure_sandbox(self, tier: str = "small"):
-        """Spin up (or reuse) a compute sandbox for GenAI workloads."""
-        # Check if our cached sandbox is still alive.
-        if self._sandbox is not None:
+        """Spin up (or reuse) a compute sandbox. Caches one per tier."""
+        # Check cached sandbox for this tier.
+        cached = self._sandbox.get(tier)
+        if cached is not None:
             try:
-                self._sandbox.refresh()
-                cached_tier = str(getattr(self._sandbox, "tier", "")).lower()
-                tier_ok = (tier == "small") or ("medium" in cached_tier)
-                if tier_ok and (getattr(self._sandbox, "is_active", False) or getattr(self._sandbox, "status", "") == "active"):
-                    return self._sandbox
+                cached.refresh()
+                if getattr(cached, "is_active", False) or getattr(cached, "status", "") == "active":
+                    return cached
             except Exception:  # noqa: BLE001
                 pass
-            self._sandbox = None
+            self._sandbox.pop(tier, None)
 
-        # Reuse any already-active sandbox from the account — only if tier matches.
+        # Reuse any active account sandbox matching tier.
         try:
             for sb in self._conn.list_sandboxes():
-                if getattr(sb, "status", "") == "active":
-                    sb_tier = str(getattr(sb, "tier", "")).lower()
-                    if tier == "medium" and "medium" not in sb_tier:
-                        log.info("skipping sandbox %s (tier=%s, need medium)", sb.id, sb_tier)
-                        continue
-                    log.info("reusing existing active sandbox id=%s tier=%s", sb.id, sb_tier)
-                    self._sandbox = sb
-                    return sb
+                if getattr(sb, "status", "") != "active":
+                    continue
+                sb_tier = str(getattr(sb, "tier", "")).lower()
+                is_match = ("medium" in sb_tier) if tier == "medium" else ("medium" not in sb_tier)
+                if not is_match:
+                    continue
+                log.info("reusing existing sandbox id=%s tier=%s", sb.id, sb_tier)
+                self._sandbox[tier] = sb
+                return sb
         except Exception:  # noqa: BLE001
             pass
 
         chosen = SandboxTier.small if tier == "small" else SandboxTier.medium
-        log.info("creating VideoDB sandbox tier=%s ...", chosen)
-        sandbox = self._conn.create_sandbox(tier=chosen, name="trace-tts")
+        log.info("creating sandbox tier=%s ...", chosen)
+        sandbox = self._conn.create_sandbox(tier=chosen, name=f"trace-{tier}")
         sandbox.wait_for_ready(timeout=300, interval=5)
-        log.info("sandbox ready: id=%s", sandbox.id)
-        self._sandbox = sandbox
+        log.info("sandbox ready: id=%s tier=%s", sandbox.id, tier)
+        self._sandbox[tier] = sandbox
         return sandbox
 
     def stop_sandbox(self) -> None:
-        if self._sandbox is None:
-            return
-        try:
-            log.info("stopping sandbox %s", self._sandbox.id)
-            self._sandbox.stop()
-            self._sandbox.wait_for_stop(timeout=120)
-        except Exception as e:  # noqa: BLE001
-            log.warning("sandbox stop failed: %s", e)
-        finally:
-            self._sandbox = None
+        for tier, sb in list(self._sandbox.items()):
+            try:
+                log.info("stopping sandbox %s (tier=%s)", sb.id, tier)
+                sb.stop()
+                sb.wait_for_stop(timeout=120)
+            except Exception as e:  # noqa: BLE001
+                log.warning("sandbox stop failed: %s", e)
+        self._sandbox.clear()
 
     # ---- Collection-level: live ingest (CaptureSession/RTStream req) ----
 

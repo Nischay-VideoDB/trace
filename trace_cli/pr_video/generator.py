@@ -86,7 +86,7 @@ def generate_pr_video(session_id: str, pr_url: str, *, dry_run: bool = False) ->
     log.info("narration: %d chunks, total %d chars", len(scripts), sum(len(s) for s in scripts))
 
     # Render + assemble Timeline with per-clip overlays
-    result = render(client, meta.video_id, clips, scripts)
+    result = render(client, meta.video_id, clips, scripts, pr_title=pr_title)
     log.info("PR video HLS URL: %s", result.hls_url)
 
     # Stop sandbox now that voice generation is done — saves credits.
