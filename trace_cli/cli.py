@@ -1,4 +1,5 @@
 """Trace CLI entry point. Subcommands: start, stop, generate, serve, qa-poll."""
+# generate without pr_url: auto-commit + push + open PR + generate (formerly `ship`)
 from __future__ import annotations
 
 import logging
@@ -67,8 +68,7 @@ def start(
     Credentials.require("VIDEODB_API_KEY")
     from trace_cli.capture.heartbeat import HeartbeatThread
     from trace_cli.capture.live_indexer import LiveIndexer
-    from trace_cli.capture.service import start_capture, stop_capture
-    from trace_cli.capture.watchers import HyprctlPoller, InotifyWatcher
+    from trace_cli.capture.platform import SaveWatcher, WindowPoller, start_capture, stop_capture
     from trace_cli.session.manager import ActiveSessionError, SessionManager
     from trace_cli.session.store import SessionStore
 
@@ -104,9 +104,9 @@ def start(
 
     hb = HeartbeatThread(meta.session_id, store, screen_path, audio_path)
     hb.start()
-    ino = InotifyWatcher(meta.session_id, store, project)
+    ino = SaveWatcher(meta.session_id, store, project)
     ino.start()
-    hypr = HyprctlPoller(meta.session_id, store)
+    hypr = WindowPoller(meta.session_id, store)
     hypr.start()
 
     live_indexer = None
@@ -227,52 +227,61 @@ def stop(
 @app.command()
 def generate(
     session_id: str = typer.Argument(..., help="Session id (from `trace start` output)"),
-    pr_url: str = typer.Argument(..., help="GitHub PR URL"),
-    focus: bool = typer.Option(False, "--focus", help="Also post Focus Mode comment"),
+    pr_url: str = typer.Argument(None, help="GitHub PR URL. Omit to auto-commit, push, and open PR."),
+    base: str = typer.Option(None, "--base", help="Base branch for auto PR (default: repo default)"),
+    no_commit: bool = typer.Option(False, "--no-commit", help="Skip auto-commit when pr_url is omitted"),
+    repo: Path = typer.Option(None, "--repo", help="Repo dir to use for auto PR (overrides session project_dir)"),
     dry_run: bool = typer.Option(False, "--dry-run", help="Render but do not post PR comment"),
 ) -> None:
-    """Generate narrated PR video and post it as a comment on the GitHub PR."""
+    """Generate narrated PR video and post it to the GitHub PR.
+
+    With a PR URL:   trace generate <session_id> <pr_url>
+    Without one:     trace generate <session_id>
+                     Auto-commits staged changes, pushes branch, opens PR, then generates.
+    """
     Credentials.require("VIDEODB_API_KEY", "GITHUB_TOKEN")
-    from trace_cli.pr_video.generator import generate_pr_video
     from trace_cli.pr_video.selector import InsufficientContent
 
-    try:
-        result = generate_pr_video(session_id, pr_url, dry_run=dry_run)
-    except InsufficientContent as e:
-        console.print(f"[red]not enough session content for a PR video: {e}[/red]")
-        sys.exit(1)
-    except Exception as e:  # noqa: BLE001
-        console.print(f"[red]generate failed: {e}[/red]")
-        sys.exit(1)
-
-    console.print(f"[green]HLS URL:[/green] {result.hls_url}")
-    console.print(f"[green]clips:[/green] {result.clip_count} totaling {result.total_seconds:.1f}s")
-    if dry_run:
-        console.print("[yellow]dry-run; no PR comment posted[/yellow]")
+    if pr_url:
+        from trace_cli.pr_video.generator import generate_pr_video
+        try:
+            result = generate_pr_video(session_id, pr_url, dry_run=dry_run)
+        except InsufficientContent as e:
+            console.print(f"[red]not enough session content: {e}[/red]")
+            sys.exit(1)
+        except Exception as e:  # noqa: BLE001
+            console.print(f"[red]generate failed: {e}[/red]")
+            sys.exit(1)
+        console.print(f"[green]HLS URL:[/green] {result.hls_url}")
+        console.print(f"[green]clips:[/green] {result.clip_count} totaling {result.total_seconds:.1f}s")
+        if dry_run:
+            console.print("[yellow]dry-run; no PR comment posted[/yellow]")
+        else:
+            console.print("[green]posted comment to PR[/green]")
     else:
-        console.print("[green]posted comment to PR[/green]")
-
-
-@app.command()
-def ship(
-    session_id: str = typer.Argument(..., help="Session id (from `trace start` output)"),
-    base: str = typer.Option(None, "--base", help="Base branch (default: repo default)"),
-    no_commit: bool = typer.Option(False, "--no-commit", help="Refuse to auto-commit uncommitted changes"),
-    repo: Path = typer.Option(None, "--repo", help="Override session's project_dir (use this repo for the PR)"),
-) -> None:
-    """End-to-end: auto-commit + push + open PR (AI title/body) + run generate."""
-    Credentials.require("VIDEODB_API_KEY", "GITHUB_TOKEN")
-    from trace_cli.pr_video.ship import ShipError, ship as ship_fn
-    try:
-        result = ship_fn(session_id, base=base, auto_commit=not no_commit, repo_override=repo)
-    except ShipError as e:
-        console.print(f"[red]ship failed: {e}[/red]")
-        sys.exit(1)
-    console.print(f"\n[green]PR:[/green] {result.pr_url}")
-    console.print(f"[green]branch:[/green] {result.branch}")
-    if result.commit_sha:
-        console.print(f"[green]commit:[/green] {result.commit_sha[:10]}")
-    console.print(f"[green]video:[/green] {result.render.hls_url}")
+        # Auto-ship: commit + push + open PR + generate
+        from trace_cli.pr_video.ship import ShipError, ship as ship_fn
+        try:
+            ship_result = ship_fn(
+                session_id,
+                base=base,
+                auto_commit=not no_commit,
+                repo_override=repo,
+            )
+        except ShipError as e:
+            console.print(f"[red]generate failed: {e}[/red]")
+            sys.exit(1)
+        except InsufficientContent as e:
+            console.print(f"[red]not enough session content: {e}[/red]")
+            sys.exit(1)
+        except Exception as e:  # noqa: BLE001
+            console.print(f"[red]generate failed: {e}[/red]")
+            sys.exit(1)
+        console.print(f"[green]PR:[/green] {ship_result.pr_url}")
+        console.print(f"[green]branch:[/green] {ship_result.branch}")
+        if ship_result.commit_sha:
+            console.print(f"[green]commit:[/green] {ship_result.commit_sha[:10]}")
+        console.print(f"[green]video:[/green] {ship_result.render.hls_url}")
 
 
 @app.command()
@@ -288,15 +297,15 @@ def serve(
 
 @app.command("qa-poll")
 def qa_poll(
-    pr_url: str = typer.Argument(..., help="PR to poll for @trace comments"),
+    pr_url: str = typer.Argument(..., help="PR to poll for /trace comments"),
     session_id: str = typer.Argument(..., help="Session bound to this PR"),
     interval: int = typer.Option(30, "--interval", help="Poll interval seconds"),
     stop_after: int = typer.Option(0, "--stop-after", help="Exit after N seconds (0 = run forever)"),
 ) -> None:
-    """Poll GitHub PR comments and answer @trace mentions."""
+    """Poll GitHub PR comments and answer /trace mentions."""
     Credentials.require("VIDEODB_API_KEY", "GITHUB_TOKEN")
     from trace_cli.web.qa import poll_loop
-    console.print(f"[cyan]polling {pr_url} for @trace every {interval}s (session={session_id})[/cyan]")
+    console.print(f"[cyan]polling {pr_url} for /trace every {interval}s (session={session_id})[/cyan]")
     poll_loop(
         pr_url=pr_url,
         session_id=session_id,

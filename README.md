@@ -33,10 +33,10 @@ trace generate <session_id> <pr_url>
 
 trace serve
     runs a FastAPI web server: serves the landing page, docs, and the
-    /webhook/github endpoint for the @trace reviewer bot
+    /webhook/github endpoint for the /trace reviewer bot
 
 trace qa-poll <pr_url> <session_id>
-    polls the PR for @trace mentions
+    polls the PR for /trace mentions
     runs semantic search across the indexed spoken_word + scene indexes
     replies with up to 3 bounded clip URLs + paraphrased answers
 ```
@@ -87,6 +87,24 @@ System dependencies (Arch Linux + Hyprland verified):
 sudo pacman -S --needed ffmpeg wf-recorder inotify-tools
 ```
 
+**macOS** (uses the official VideoDB Capture SDK):
+
+```
+pip install "videodb[capture]" watchdog
+# or with uv:
+uv sync --extra macos
+```
+
+No system dependencies needed — the SDK handles screen + mic natively.
+
+**Windows** (uses the official VideoDB Capture SDK):
+
+```
+pip install "videodb[capture]" watchdog pywin32 psutil
+# or with uv:
+uv sync --extra windows
+```
+
 For VideoDB credit: claim sandbox credit at https://hackday.videodb.io/sandbox.html.
 
 ## Quickstart
@@ -112,19 +130,19 @@ Generate the PR video against a real GitHub PR (push your branch, open the PR, t
 uv run trace generate <session_id_from_start_output> https://github.com/you/repo/pull/N
 ```
 
-Or do it all in one shot — auto-commit, push, open PR, and generate:
+Or omit the PR URL to auto-commit, push, open PR, and generate in one shot:
 
 ```
-uv run trace ship <session_id_from_start_output>
+uv run trace generate <session_id_from_start_output>
 ```
 
-Run the @trace reviewer bot (long-running):
+Run the /trace reviewer bot (long-running):
 
 ```
 uv run trace qa-poll https://github.com/you/repo/pull/N <session_id>
 ```
 
-Any reviewer comment containing `@trace what about X` triggers a semantic search against the indexed session and posts a reply with up to 3 bounded clips.
+Any reviewer comment containing `/trace what about X` triggers a semantic search against the indexed session and posts a reply with up to 3 bounded clips.
 
 ## Architecture choices
 
@@ -138,7 +156,7 @@ Any reviewer comment containing `@trace what about X` triggers a semantic search
 
 ```
 trace_cli/
-  cli.py                     typer entry (start, stop, generate, ship, serve, qa-poll, focus, contribution-map, pr-description, ask)
+  cli.py                     typer entry (start, stop, generate, serve, qa-poll, focus, contribution-map, pr-description, ask)
   credentials.py             env var loading + key redaction
   videodb/client.py          single VideoDB facade
   github/client.py           PR URL validator + comment / diff / description ops
@@ -163,7 +181,6 @@ trace_cli/
     narration.py             single-pass deduplicated scripts with scene + transcript grounding
     render.py                editor.Timeline with 3 tracks: video / audio / badges
     generator.py             end to end orchestration
-    ship.py                  auto-commit + push + open PR + generate end-to-end
   focus_mode/
     builder.py               reviewer Focus Mode ranking
   contribution_map/
@@ -173,7 +190,7 @@ trace_cli/
     generator.py             What / Why / Struggles / Follow-ups
   web/
     app.py                   FastAPI web server + landing mount
-    qa.py                    @trace polling bot
+    qa.py                    /trace polling bot
 ```
 
 ## License
