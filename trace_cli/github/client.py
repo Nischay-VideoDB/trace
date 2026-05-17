@@ -100,24 +100,28 @@ class GitHubClient:
             raise GitHubError(str(e)) from e
 
     def list_comments(self, pr_url: str, since_iso: str | None = None) -> list[dict]:
-        """List issue comments. since_iso filters server-side when provided."""
+        """List issue comments. since_iso filters client-side when provided."""
         ref = validate_pr_url(pr_url)
         pr = self._pr(ref)
         try:
-            kwargs = {}
+            since_dt = None
             if since_iso:
-                from datetime import datetime
-                kwargs["since"] = datetime.fromisoformat(since_iso.replace("Z", "+00:00"))
-            return [
-                {
+                from datetime import datetime, timezone
+                since_dt = datetime.fromisoformat(since_iso.replace("Z", "+00:00"))
+                if since_dt.tzinfo is None:
+                    since_dt = since_dt.replace(tzinfo=timezone.utc)
+            comments = []
+            for c in pr.get_issue_comments():
+                if since_dt and c.created_at and c.created_at.replace(tzinfo=timezone.utc if c.created_at.tzinfo is None else c.created_at.tzinfo) <= since_dt:
+                    continue
+                comments.append({
                     "id": c.id,
                     "body": c.body or "",
                     "user": c.user.login if c.user else "",
                     "created_at": c.created_at.isoformat() if c.created_at else "",
                     "html_url": c.html_url,
-                }
-                for c in pr.get_issue_comments(**kwargs)
-            ]
+                })
+            return comments
         except GithubException as e:
             raise GitHubError(str(e)) from e
 
