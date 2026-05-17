@@ -1,7 +1,7 @@
 function Docs() {
   const tree = [
     ["dir", "trace_cli/", ""],
-    ["file", "  cli.py", "typer entry (start, stop, generate, replay, serve, qa-poll, focus)"],
+    ["file", "  cli.py", "typer entry (start, stop, generate, ship, serve, qa-poll, focus, contribution-map, pr-description, ask)"],
     ["file", "  credentials.py", "env var loading + key redaction"],
     ["file", "  videodb/client.py", "single VideoDB facade"],
     ["file", "  github/client.py", "PR URL validator + comment / diff / description ops"],
@@ -26,18 +26,16 @@ function Docs() {
     ["file", "    narration.py", "batched, scene + transcript grounded"],
     ["file", "    render.py", "editor.Timeline with 3 tracks: video / audio / badges"],
     ["file", "    generator.py", "end-to-end orchestration"],
-    ["file", "    bug_replay.py", "stack trace → session moments"],
+    ["file", "    ship.py", "auto-commit + push + open PR + generate end-to-end"],
     ["dir",  "  focus_mode/", ""],
     ["file", "    builder.py", "reviewer Focus Mode ranking"],
-    ["dir",  "  decision_replay/", ""],
-    ["file", "    service.py", "file + line range -> bounded HLS clip intervals"],
     ["dir",  "  contribution_map/", ""],
     ["file", "    scanner.py", "read Claude Code session logs in capture window"],
     ["file", "    mapper.py", "classify diff lines as human / agent / mixed / unknown"],
     ["dir",  "  pr_description/", ""],
     ["file", "    generator.py", "What / Why / Struggles / Follow-ups"],
     ["dir",  "  web/", ""],
-    ["file", "    app.py", "FastAPI Decision Replay UI + landing mount"],
+    ["file", "    app.py", "FastAPI web server + landing mount"],
     ["file", "    qa.py", "@trace polling bot"],
   ];
 
@@ -106,18 +104,17 @@ function Docs() {
                 {sections.map((s) => <a key={s.id} href={"#" + s.id}>{s.label}</a>)}
                 <div className="docs-side-h" style={{ marginTop: 24 }}>Related</div>
                 <a href="/">Landing</a>
-                <a href="/replay">Decision Replay</a>
               </aside>
 
               <div>
                 <div id="overview" className="docs-block">
                   <h3 className="docs-h2">Overview</h3>
                   <p>
-                    trace is a CLI plus a small FastAPI app. The CLI runs locally, captures your screen and mic during a coding session, and indexes the result through VideoDB. The FastAPI app exposes Decision Replay and serves this site. There is no managed backend.
+                    trace is a CLI plus a small FastAPI app. The CLI runs locally, captures your screen and mic during a coding session, and indexes the result through VideoDB. The FastAPI app serves the landing page and handles the @trace webhook. There is no managed backend.
                   </p>
                   <pre>{`trace start  →  trace stop  →  trace generate  →  PR decorated.
                               ↓
-                  trace serve · trace replay · trace qa-poll · trace focus`}</pre>
+                  trace serve · trace qa-poll · trace focus`}</pre>
                 </div>
 
                 <div id="pipeline" className="docs-block">

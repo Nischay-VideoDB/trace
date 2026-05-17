@@ -116,12 +116,12 @@ function Hero() {
             <span className="acc">narrated</span><span className="acc">.</span>
           </h1>
           <p className="hero-sub">
-            record a coding session. get a PR that explains itself — narrated walkthrough video, reviewer Q&amp;A bot, decision replay, focus mode. one vendor, fifteen API calls.
+            record a coding session. get a PR that explains itself — narrated walkthrough video, reviewer Q&amp;A bot, focus mode, contribution map. one vendor, fifteen API calls.
           </p>
           <div className="hero-ctas">
             <a className="btn primary" href="#install">Install →</a>
             <a className="btn" href="#walkthrough">See a PR</a>
-            <a className="btn" href="/replay">Decision Replay</a>
+            <a className="btn" href="#features">Features</a>
           </div>
           <div className="hero-stats">
             <div>
@@ -131,8 +131,8 @@ function Hero() {
             </div>
             <div>
               <div className="hero-stat-k">CLI commands</div>
-              <div className="hero-stat-v">7</div>
-              <div className="hero-stat-n">start · stop · generate · replay · serve · qa-poll · focus</div>
+              <div className="hero-stat-v">9</div>
+              <div className="hero-stat-n">start · stop · generate · ship · serve · qa-poll · focus · contribution-map · ask</div>
             </div>
             <div>
               <div className="hero-stat-k">Vendors</div>

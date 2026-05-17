@@ -13,11 +13,10 @@ a narrated PR video with session memory for reviewers.
 1. Session capture — screen + mic → VideoDB
 2. Timeline builder — tag stuck/research/progress/speech moments
 3. PR video — 90 sec narrated video from session clips
-4. Decision Replay — click code block, see its full evolution
-5. Reviewer Q&A — @trace answers questions with session clips
-6. Human vs Agent map — AI vs human contribution overlay
-7. Reviewer Focus Mode — compress PR to key review areas
-8. PR Description — context-aware, includes why not just what
+4. Reviewer Q&A — @trace answers questions with session clips
+5. Human vs Agent map — AI vs human contribution overlay
+6. Reviewer Focus Mode — compress PR to key review areas
+7. PR Description — context-aware, includes why not just what
 
 ## APIs used
 - VideoDB: CaptureSession, RTStream, indexing, semantic search, Timeline API

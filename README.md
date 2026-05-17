@@ -2,7 +2,7 @@
 
 `trace start` -> code -> `trace stop` -> your PR explains itself.
 
-trace watches a coding session (screen + mic), indexes everything through VideoDB, and decorates the resulting GitHub PR with a narrated walkthrough video, a context-aware description, a reviewer Q&A bot, a decision replay page, and a human vs AI contribution map. All powered by one vendor: VideoDB.
+trace watches a coding session (screen + mic), indexes everything through VideoDB, and decorates the resulting GitHub PR with a narrated walkthrough video, a context-aware description, a reviewer Q&A bot, and a human vs AI contribution map. All powered by one vendor: VideoDB.
 
 Built for the VideoDB "Give Agents Eyes and Ears" hackathon (May 16 to 18, 2026).
 
@@ -32,8 +32,8 @@ trace generate <session_id> <pr_url>
     appends a What / Why / Struggles / Follow-ups PR description
 
 trace serve
-    runs a FastAPI Decision Replay page: pick a file + line range,
-    get bounded HLS clips of every moment that edited those lines
+    runs a FastAPI web server: serves the landing page, docs, and the
+    /webhook/github endpoint for the @trace reviewer bot
 
 trace qa-poll <pr_url> <session_id>
     polls the PR for @trace mentions
@@ -55,9 +55,9 @@ Every VideoDB API surface used, and where:
 | `Video.index_spoken_words(SegmentationType.sentence)` | `trace_cli/indexing/pipeline.py` | Transcript for narration + Q&A |
 | `Video.index_scenes(SceneExtractionType.time_based, prompt=...)` | `trace_cli/indexing/pipeline.py` | Visual classification with custom prompt |
 | `Video.get_scene_index(scene_index_id)` | `trace_cli/videodb/client.py` | Scene grounding for narration |
-| `Video.search(IndexType.spoken_word, semantic)` | `trace_cli/web/qa.py`, `trace_cli/decision_replay/service.py` | Reviewer Q&A + Decision Replay search |
-| `Video.search(IndexType.scene, semantic)` | `trace_cli/web/qa.py`, `trace_cli/decision_replay/service.py` | Visual semantic search |
-| `Video.generate_stream(timeline=[(s,e)])` | `trace_cli/web/qa.py`, `trace_cli/decision_replay/service.py` | Bounded HLS clip URLs |
+| `Video.search(IndexType.spoken_word, semantic)` | `trace_cli/web/qa.py` | Reviewer Q&A search |
+| `Video.search(IndexType.scene, semantic)` | `trace_cli/web/qa.py` | Visual semantic search |
+| `Video.generate_stream(timeline=[(s,e)])` | `trace_cli/web/qa.py` | Bounded HLS clip URLs |
 | `videodb.editor.Timeline + Track + Clip` | `trace_cli/pr_video/render.py` | PR video assembly |
 | `videodb.editor.VideoAsset` | `trace_cli/pr_video/render.py` | Source clips, muted, on track z=0 |
 | `videodb.editor.AudioAsset` | `trace_cli/pr_video/render.py` | Narration on track z=1 |
@@ -69,7 +69,7 @@ Every VideoDB API surface used, and where:
 ## Install
 
 ```
-git clone <repo>
+git clone https://github.com/crypticsaiyan/trace
 cd trace
 uv sync
 ```
@@ -97,8 +97,8 @@ Record a 2 to 3 minute coding session on a real project:
 mkdir -p /tmp/demo && cd /tmp/demo
 git init && echo "def hello(): pass" > greet.py
 
-# Terminal 1
-uv run trace start --project /tmp/demo
+# Terminal 1 — start recording (--live streams 15s chunks to VideoDB as you code)
+uv run trace start --project /tmp/demo --live
 
 # code in another window, talk out loud while editing, save with :w
 
@@ -106,17 +106,16 @@ uv run trace start --project /tmp/demo
 uv run trace stop
 ```
 
-Generate the PR video against a real GitHub PR (you push, you open the PR, trace decorates):
+Generate the PR video against a real GitHub PR (push your branch, open the PR, then run):
 
 ```
 uv run trace generate <session_id_from_start_output> https://github.com/you/repo/pull/N
 ```
 
-Start the Decision Replay UI:
+Or do it all in one shot — auto-commit, push, open PR, and generate:
 
 ```
-uv run trace serve
-# open http://127.0.0.1:8000/replay
+uv run trace ship <session_id_from_start_output>
 ```
 
 Run the @trace reviewer bot (long-running):
@@ -139,7 +138,7 @@ Any reviewer comment containing `@trace what about X` triggers a semantic search
 
 ```
 trace_cli/
-  cli.py                     typer entry (start, stop, generate, replay, serve, qa-poll)
+  cli.py                     typer entry (start, stop, generate, ship, serve, qa-poll, focus, contribution-map, pr-description, ask)
   credentials.py             env var loading + key redaction
   videodb/client.py          single VideoDB facade
   github/client.py           PR URL validator + comment / diff / description ops
@@ -164,15 +163,16 @@ trace_cli/
     narration.py             single-pass deduplicated scripts with scene + transcript grounding
     render.py                editor.Timeline with 3 tracks: video / audio / badges
     generator.py             end to end orchestration
-  decision_replay/
-    service.py               file + line range -> bounded HLS clip intervals
+    ship.py                  auto-commit + push + open PR + generate end-to-end
+  focus_mode/
+    builder.py               reviewer Focus Mode ranking
   contribution_map/
     scanner.py               read Claude Code session logs in the capture window
     mapper.py                classify diff lines as human / agent / mixed / unknown
   pr_description/
     generator.py             What / Why / Struggles / Follow-ups
   web/
-    app.py                   FastAPI Decision Replay UI
+    app.py                   FastAPI web server + landing mount
     qa.py                    @trace polling bot
 ```
 

@@ -3,20 +3,20 @@ function Install() {
     {
       n: "01",
       h: "Clone + sync",
-      code: "git clone <repo>\ncd trace\nuv sync",
-      note: "Python 3.11+. uv manages the virtualenv.",
+      code: "git clone https://github.com/crypticsaiyan/trace\ncd trace\nuv sync",
+      note: "Python 3.12. uv manages the virtualenv and installs all dependencies.",
     },
     {
       n: "02",
       h: "Set keys",
       code: "# .env at repo root\nVIDEODB_API_KEY=...\nGITHUB_TOKEN=...",
-      note: "Claim hackathon sandbox credit at hackday.videodb.io/sandbox.html.",
+      note: "VIDEODB_API_KEY: claim $1,000 sandbox credit at hackday.videodb.io/sandbox.html. GITHUB_TOKEN: needs repo + pull_request scopes.",
     },
     {
       n: "03",
       h: "System deps (Arch + Hyprland verified)",
       code: "sudo pacman -S --needed \\\n  ffmpeg wf-recorder inotify-tools",
-      note: "wf-recorder is Wayland-only; X11 hosts can swap in ffmpeg's x11grab.",
+      note: "wf-recorder is Wayland-only. X11 hosts can swap in ffmpeg -f x11grab. Mic capture uses PulseAudio or pipewire-pulse compat shim.",
     },
   ];
 
@@ -24,16 +24,22 @@ function Install() {
     "mkdir -p /tmp/demo && cd /tmp/demo",
     "git init && echo 'def hello(): pass' > greet.py",
     "",
-    "# terminal 1",
+    "# terminal 1 — start recording",
     "uv run trace start --project /tmp/demo --live",
     "",
-    "# code in another window, talk out loud, save with :w",
+    "# code in another window, talk out loud while editing, save with :w",
     "",
-    "# terminal 2 when done",
+    "# terminal 2 — stop + index",
     "uv run trace stop",
     "",
-    "# decorate a real PR",
-    "uv run trace generate <sid> https://github.com/you/repo/pull/N",
+    "# generate narrated PR video (push + open PR first)",
+    "uv run trace generate <session_id> https://github.com/you/repo/pull/N",
+    "",
+    "# OR: auto-commit + push + open PR + generate in one shot",
+    "uv run trace ship <session_id>",
+    "",
+    "# run the @trace reviewer bot (long-running)",
+    "uv run trace qa-poll https://github.com/you/repo/pull/N <session_id>",
   ].join("\n");
 
   return (
@@ -79,9 +85,9 @@ function APIMap() {
     ["Video.index_spoken_words", "indexing/pipeline.py", "Transcript (sentence segmentation)"],
     ["Video.index_scenes", "indexing/pipeline.py", "Visual classification (custom prompt)"],
     ["Video.get_scene_index", "videodb/client.py", "Scene grounding for narration"],
-    ["Video.search (spoken_word)", "web/qa.py · decision_replay/service.py", "Reviewer Q&A + Replay search"],
-    ["Video.search (scene)", "web/qa.py · decision_replay/service.py", "Visual semantic search"],
-    ["Video.generate_stream", "web/qa.py · decision_replay/service.py", "Bounded HLS clip URLs"],
+    ["Video.search (spoken_word)", "web/qa.py", "Reviewer Q&A search"],
+    ["Video.search (scene)", "web/qa.py", "Visual semantic search"],
+    ["Video.generate_stream", "web/qa.py", "Bounded HLS clip URLs"],
     ["editor.Timeline + Track + Clip", "pr_video/render.py", "PR video assembly"],
     ["editor.VideoAsset", "pr_video/render.py", "Source clips, muted, track z=0"],
     ["editor.AudioAsset", "pr_video/render.py", "Narration, track z=1"],
@@ -127,12 +133,10 @@ function Features() {
     { n: "01", name: "Session capture", desc: "Screen + mic streamed to VideoDB as 15s chunks during the session, or muxed and uploaded on stop.", chip: "VideoDB · Collection.upload" },
     { n: "02", name: "Timeline builder", desc: "Four classifiers tag every second of the session: stuck, research, progress, speech.", chip: "trace_cli/timeline" },
     { n: "03", name: "PR video", desc: "Narrated walkthrough assembled on editor.Timeline with three tracks. Posted as HLS to the PR.", chip: "editor.Timeline · generate_stream" },
-    { n: "04", name: "Decision Replay", desc: "Pick a file + line range. Get bounded HLS clips of every moment those lines were edited.", chip: "Video.search · generate_stream" },
-    { n: "05", name: "Reviewer Q&A", desc: "@trace in a PR comment → semantic search across spoken_word + scene indexes, up to 3 clip URLs.", chip: "Video.search (semantic)" },
-    { n: "06", name: "Human vs Agent map", desc: "Scan Claude Code session logs in the capture window. Classify diff lines as human, agent, mixed, or unknown.", chip: "trace_cli/contribution_map" },
-    { n: "07", name: "Focus Mode", desc: "Compress a 20-file PR into a ranked list of files that drove the actual decisions, with rationale.", chip: "trace_cli/focus_mode" },
-    { n: "08", name: "PR Description", desc: "Auto-appended What / Why / Struggles / Follow-ups, grounded in the session not the diff.", chip: "trace_cli/pr_description" },
-    { n: "09", name: "Replay the Bug", desc: "Given a stack trace, surface the moments in the session where the broken code was written.", chip: "trace_cli/pr_video/bug_replay" },
+    { n: "04", name: "Reviewer Q&A", desc: "@trace in a PR comment → semantic search across spoken_word + scene indexes, up to 3 clip URLs.", chip: "Video.search (semantic)" },
+    { n: "05", name: "Human vs Agent map", desc: "Scan Claude Code session logs in the capture window. Classify diff lines as human, agent, mixed, or unknown.", chip: "trace_cli/contribution_map" },
+    { n: "06", name: "Focus Mode", desc: "Compress a 20-file PR into a ranked list of files that drove the actual decisions, with rationale.", chip: "trace_cli/focus_mode" },
+    { n: "07", name: "PR Description", desc: "Auto-appended What / Why / Struggles / Follow-ups, grounded in the session not the diff.", chip: "trace_cli/pr_description" },
   ];
   return (
     <section id="features" className="section">
@@ -140,7 +144,7 @@ function Features() {
         <div className="section-head">
           <div>
             <span className="section-tag">Features</span>
-            <h2 className="section-title">Nine surfaces. All grounded.</h2>
+            <h2 className="section-title">Seven surfaces. All grounded.</h2>
           </div>
           <p className="section-sub">
             Every feature reads from the same indexed session. Narration cannot invent details the eyes-and-ears layer didn't see.
@@ -189,7 +193,6 @@ function Footer() {
           <div className="footer-col">
             <div className="footer-h">Surfaces</div>
             <a href="/docs">Docs</a>
-            <a href="/replay">Decision Replay</a>
             <a href="#api">VideoDB map</a>
           </div>
           <div className="footer-col">
