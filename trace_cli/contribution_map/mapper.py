@@ -1,14 +1,12 @@
-"""Classify each PR-diff added/modified line as human, agent, mixed, or unknown.
+"""Classify each PR-diff file as human, agent, mixed, or unknown.
 
-Uses agent-edit evidence collected from Claude Code session logs scoped to
-the capture window. A diff line is:
-  agent   if its text appears in the agent's edit history for the same file
-  human   if the file has NO agent edits at all in this session
-  mixed   if the file has agent edits BUT this specific line text is not
-          in the agent set (developer typed by hand in a file the agent
-          also touched)
-  unknown if we have no evidence about the file (file not in capture or
-          no Claude Code session log for it)
+Evidence comes from trace's own session capture (scenes + transcript + timeline).
+No external tool dependency.
+
+  agent   = file saved while AI-assistant screen/speech signal active
+  human   = file saved during session, no AI signal detected
+  mixed   = file has partial AI signal (some saves in AI window, some not)
+  unknown = file not saved at all during session (added outside capture window)
 """
 from __future__ import annotations
 
@@ -75,44 +73,43 @@ def _matches_agent_text(line_text: str, agent_lines: set[str]) -> bool:
 def classify(
     pr_files: list[dict],
     agent_edits_by_file: dict[str, set[str]],
+    saved_files: set[str] | None = None,
 ) -> list[FileContribution]:
     """pr_files: from GitHubClient.get_pr_files (list of {path, patch}).
 
-    agent_edits_by_file: {absolute_path: set_of_lines_agent_wrote}.
+    agent_edits_by_file: {rel_or_abs_path: {"__agent__"}} from scanner.
+    saved_files: set of rel paths saved during session (for human vs unknown).
 
-    Returns one FileContribution per file with classified added lines.
-    Matching uses basename so absolute paths (Claude logs) and relative
-    PR paths reconcile.
+    File-level classification (all added lines in a file get the same label):
+      agent   = file in agent_edits_by_file
+      human   = file in saved_files but NOT in agent_edits_by_file
+      unknown = file not in saved_files at all
     """
-    # Index agent edits by basename for fuzzy match.
-    by_basename: dict[str, set[str]] = {}
-    for fp, lines in agent_edits_by_file.items():
-        base = os.path.basename(fp)
-        by_basename.setdefault(base, set()).update(lines)
+    # Normalise to basenames for matching.
+    agent_basenames: set[str] = {os.path.basename(fp) for fp in agent_edits_by_file}
+    saved_basenames: set[str] = {os.path.basename(fp) for fp in (saved_files or set())}
+    any_session_evidence = bool(saved_basenames or agent_basenames)
 
     out: list[FileContribution] = []
     for f in pr_files:
         path = f.get("path", "")
         patch = f.get("patch", "") or ""
         contribution = FileContribution(path=path)
-
-        # Find the matching agent edit set.
         base = os.path.basename(path)
-        agent_lines = by_basename.get(base, set())
-        file_was_touched = bool(agent_lines)
+
+        if base in agent_basenames:
+            file_label = "agent"
+        elif base in saved_basenames:
+            file_label = "human"
+        elif not any_session_evidence:
+            file_label = "unknown"
+        else:
+            file_label = "unknown"
 
         added = parse_added_lines(patch)
         for line_no, text in added:
-            if file_was_touched and _matches_agent_text(text, agent_lines):
-                label = "agent"
-            elif file_was_touched:
-                label = "mixed"
-            elif not by_basename:
-                label = "unknown"
-            else:
-                label = "human"
-            contribution.labels.append(LineLabel(line=line_no, text=text, label=label))
-            contribution.counts[label] += 1
+            contribution.labels.append(LineLabel(line=line_no, text=text, label=file_label))
+            contribution.counts[file_label] += 1
 
         out.append(contribution)
     return out
@@ -136,9 +133,9 @@ def render_comment(contributions: list[FileContribution]) -> str:
         "## trace contribution map",
         "",
         f"AI vs human attribution for the {grand} added lines in this PR. "
-        f"Evidence: Claude Code session logs during the capture window.",
+        f"Evidence: screen activity, voice transcript, and scene labels from the recorded session.",
         "",
-        f"- **Overall: ~{pct_ai}% AI / ~{pct_h}% human / 100% human-verified**",
+        f"**Overall: ~{pct_ai}% AI / ~{pct_h}% human**",
         "",
         "| file | human | agent | mixed | unknown |",
         "|---|---:|---:|---:|---:|",
@@ -151,7 +148,9 @@ def render_comment(contributions: list[FileContribution]) -> str:
             f"{c.counts['mixed']} | {c.counts['unknown']} |"
         )
     lines.append("")
-    lines.append("_human_ = typed by hand. _agent_ = produced by Claude Code Edit/Write. "
-                 "_mixed_ = file touched by agent but this line did not match agent text. "
-                 "_unknown_ = no agent edit evidence for this file.")
+    lines.append(
+        "_human_ = saved during session, no AI signal detected. "
+        "_agent_ = saved while AI assistant visible on screen or invoked by voice. "
+        "_unknown_ = file not observed during capture window."
+    )
     return "\n".join(lines)

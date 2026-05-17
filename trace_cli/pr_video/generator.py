@@ -89,6 +89,12 @@ def generate_pr_video(session_id: str, pr_url: str, *, dry_run: bool = False) ->
     result = render(client, meta.video_id, clips, scripts)
     log.info("PR video HLS URL: %s", result.hls_url)
 
+    # Stop sandbox now that voice generation is done — saves credits.
+    try:
+        client.stop_sandbox()
+    except Exception:  # noqa: BLE001
+        pass
+
     # Persist artifacts
     store.artifact_path(session_id, "narration.txt").write_text(result.narration_text, encoding="utf-8")
     store.artifact_path(session_id, "pr_video_url.txt").write_text(result.hls_url, encoding="utf-8")
@@ -97,31 +103,41 @@ def generate_pr_video(session_id: str, pr_url: str, *, dry_run: bool = False) ->
     if dry_run:
         return result
 
-    # Render preview GIF + upload as release asset for embed in PR description.
-    preview_gif_url: str | None = None
+    # Render thumbnail + upload as release asset for clickable embed in PR body.
+    preview_thumb_url: str | None = None
     try:
-        from trace_cli.pr_video.preview import render_preview_gif, upload_gif_as_release_asset
-        gif_path = store.artifact_path(session_id, "pr_preview.gif")
-        if render_preview_gif(result.hls_url, out_path=gif_path):
-            preview_gif_url = upload_gif_as_release_asset(
-                gif_path,
+        from trace_cli.pr_video.preview import render_thumbnail, upload_image_as_release_asset
+        thumb_path = store.artifact_path(session_id, "pr_thumbnail.jpg")
+        if render_thumbnail(result.hls_url, out_path=thumb_path, at_seconds=min(5.0, result.total_seconds / 2)):
+            preview_thumb_url = upload_image_as_release_asset(
+                thumb_path,
                 owner=pr.owner,
                 repo=pr.repo,
                 tag="trace-previews",
+                content_type="image/jpeg",
             )
     except Exception as e:  # noqa: BLE001
-        log.warning("preview gif step failed: %s", e)
+        log.warning("thumbnail step failed: %s", e)
 
     # Post contribution map comment
     map_url: str | None = None
     if meta.project_dir:
         try:
+            from trace_cli.contribution_map.scanner import _all_saved_files
             agent_edits = collect_agent_edits(
                 Path(meta.project_dir),
                 started_at=meta.started_at,
                 stopped_at=meta.stopped_at or datetime.now(timezone.utc),
+                timeline=timeline,
+                transcript=transcript,
+                scenes=scenes,
             )
-            contributions = classify(files, agent_edits)
+            saved = _all_saved_files(
+                Path(meta.project_dir),
+                started_at=meta.started_at,
+                stopped_at=meta.stopped_at or datetime.now(timezone.utc),
+            )
+            contributions = classify(files, agent_edits, saved_files=saved)
             map_body = render_comment(contributions)
             map_url = gh.post_comment(pr_url, map_body)
             log.info("posted contribution map: %s", map_url)
@@ -129,7 +145,7 @@ def generate_pr_video(session_id: str, pr_url: str, *, dry_run: bool = False) ->
         except Exception as e:  # noqa: BLE001
             log.warning("contribution map failed: %s", e)
 
-    # Append PR description (preview GIF + What/Why/Struggles/Follow-ups)
+    # Append PR description (preview thumbnail + What/Why/Struggles/Follow-ups)
     try:
         from trace_cli.pr_description.generator import build as build_description
         desc = build_description(
@@ -137,7 +153,7 @@ def generate_pr_video(session_id: str, pr_url: str, *, dry_run: bool = False) ->
             pr_title=f"PR #{pr.number}",
             video_url=result.hls_url,
             contribution_url=map_url,
-            preview_gif_url=preview_gif_url,
+            preview_thumb_url=preview_thumb_url,
         )
         gh.append_description(pr_url, desc.body)
         store.artifact_path(session_id, "pr_description.md").write_text(desc.body, encoding="utf-8")

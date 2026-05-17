@@ -138,18 +138,27 @@ def run_indexing(session_id: str, *, store: SessionStore | None = None, scene_ti
         log.warning("spoken word index failed: %s", e)
         transcript_ok = False
 
-    # 3. Scene index (classifier prompt). Capture index id for later search.
+    # 3. Scene index (classifier prompt). Use sandbox for better VLM quality.
     scene_index_id: str | None = None
     try:
+        log.info("spinning up sandbox for scene indexing...")
+        sandbox = client.ensure_sandbox(tier="medium")
         scene_index_id = client.index_video_scenes(
             video,
             prompt=SCENE_CLASSIFIER_PROMPT,
             time_seconds=scene_time,
             frame_count=3,
+            sandbox_id=sandbox.id,
         )
         log.info("scene index id=%s", scene_index_id)
     except VideoDBError as e:
         log.warning("scene index failed: %s", e)
+    finally:
+        # Stop sandbox after indexing to conserve credits; voice gen spins its own.
+        try:
+            client.stop_sandbox()
+        except Exception:  # noqa: BLE001
+            pass
 
     # 4. Persist transcript
     transcript = Transcript(session_id=session_id, segments=[])

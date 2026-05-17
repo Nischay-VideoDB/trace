@@ -1,20 +1,20 @@
-"""PR video render via the modern videodb.editor.Timeline track model.
+"""PR video render via videodb.editor.Timeline.
 
-Builds two tracks:
-  video track (z=0): VideoAsset Clips placed sequentially at integer offsets.
-  audio track (z=1): narration AudioAsset Clips placed at the same offsets.
+Strategy: generate ALL narration as ONE audio asset (one TTS call = one voice,
+guaranteed consistent). Concatenate scripts with 1-second pause markers between
+clips. Place that single audio on the audio track starting at offset 0.
 
-Clip durations are floats so the visible runtime matches narration audio
-length down to fractional seconds. Source audio is ducked to 0.15 volume
-under the narration so typing noises and small cues remain audible without
-competing with the voiceover.
+Video track: sequential clips, each trimmed to match its narration segment length.
+Audio track: single asset starting at 0, plays through entire timeline.
+
+Clip durations are computed from per-clip narration char-count ratios so video
+and audio stay in sync without per-clip TTS length measurement.
 """
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass
-
 import os
+from dataclasses import dataclass
 
 from videodb.editor import (
     AudioAsset,
@@ -25,13 +25,11 @@ from videodb.editor import (
     TextAsset,
     Timeline,
     Track,
-    TrackItem,
     VideoAsset,
 )
 
 from trace_cli.pr_video.selector import Clip as SelectedClip
 from trace_cli.videodb.client import VideoDBClient
-
 
 _CATEGORY_BADGE = {
     "progress": "EDIT",
@@ -40,14 +38,20 @@ _CATEGORY_BADGE = {
     "stuck":    "STUCK",
 }
 
+log = logging.getLogger("trace.pr_video.render")
+
+# Chars-per-second estimate for OmniVoice at normal speaking pace.
+_CPS = 16.0
+# Pause inserted between clips in the combined script (seconds equivalent).
+_PAUSE_CHARS = int(_CPS * 1.0)  # ~1s pause
+_PAUSE_TEXT = " ... "  # short pause marker OmniVoice handles naturally
+
 
 def _badge_text(sc: SelectedClip) -> str:
     label = _CATEGORY_BADGE.get(sc.category, sc.category.upper())
     if sc.file_path:
         return f"trace - {label} - {os.path.basename(sc.file_path)}"
     return f"trace - {label}"
-
-log = logging.getLogger("trace.pr_video.render")
 
 
 @dataclass
@@ -77,82 +81,74 @@ def render(
     video_length = float(getattr(video, "length", 0.0) or 0.0)
     log.info("source video length: %.3fs", video_length)
 
-    # 1. TTS every chunk in parallel; record audio asset id and length.
-    # Long sessions (10+ clips) get a 5x speedup vs serial.
-    from concurrent.futures import ThreadPoolExecutor
+    # 1. Combine all scripts into ONE TTS call — guarantees single consistent voice.
+    #    Segments separated by pause marker so OmniVoice breathes between clips.
+    combined_script = _PAUSE_TEXT.join(per_clip_scripts)
+    log.info("combined narration: %d chars across %d clips", len(combined_script), len(per_clip_scripts))
 
-    def _tts_one(idx_script: tuple[int, str]) -> tuple[int, str, float]:
-        i, script = idx_script
-        try:
-            audio = client.generate_voice(text=script, voice=voice)
-            aid = getattr(audio, "id", "")
-            alen = float(getattr(audio, "length", 0.0) or 0.0)
-            log.info("clip %d narration: id=%s len=%.2fs (%d chars)", i, aid, alen, len(script))
-            return i, aid, alen
-        except Exception as e:  # noqa: BLE001
-            log.warning("generate_voice failed clip %d (%s)", i, e)
-            return i, "", 0.0
+    audio_id = ""
+    audio_total_len = 0.0
+    try:
+        audio = client.generate_voice(text=combined_script, voice=voice)
+        audio_id = getattr(audio, "id", "")
+        audio_total_len = float(getattr(audio, "length", 0.0) or 0.0)
+        log.info("combined narration audio: id=%s len=%.2fs", audio_id, audio_total_len)
+    except Exception as e:  # noqa: BLE001
+        log.warning("generate_voice failed (%s); building silent video", e)
 
-    narration_raw: list[tuple[int, str, float] | None] = [None] * len(per_clip_scripts)
-    with ThreadPoolExecutor(max_workers=min(8, max(1, len(per_clip_scripts)))) as ex:
-        for result in ex.map(_tts_one, enumerate(per_clip_scripts)):
-            narration_raw[result[0]] = result
-    narration: list[tuple[str, float]] = [(r[1], r[2]) if r else ("", 0.0) for r in narration_raw]
+    # 2. Estimate per-clip audio duration proportional to char count.
+    #    pause_chars added between each pair of clips.
+    seg_chars = [len(s) for s in per_clip_scripts]
+    pause_chars = _PAUSE_CHARS
+    total_chars = sum(seg_chars) + pause_chars * (len(seg_chars) - 1)
 
-    # 2. Decide clip duration per item.
-    # Rule: video clip duration = max(source_dur, narration_len + 0.5).
-    # If narration longer than available source span, extend clip end within source.
-    plans: list[tuple[float, float, float]] = []  # (src_start, src_end, output_dur)
-    for sc, (_aid, alen) in zip(clips, narration):
-        src_start = max(0.0, sc.start)
-        src_end = min(video_length - 0.05 if video_length > 0 else sc.end, sc.end)
-        src_dur = max(0.5, src_end - src_start)
+    if audio_total_len > 0 and total_chars > 0:
+        cps_actual = audio_total_len / total_chars
+    else:
+        cps_actual = 1.0 / _CPS
 
-        # Tail buffer 0.1s only. Make video clip match narration length when narration
-        # exists; ignore raw source clip duration so we never show dead air.
-        if alen > 0:
-            target_dur = alen + 0.1
-        else:
-            target_dur = src_dur
+    per_clip_audio_dur: list[float] = []
+    for i, sc in enumerate(seg_chars):
+        chars = sc + (pause_chars if i < len(seg_chars) - 1 else 0)
+        per_clip_audio_dur.append(chars * cps_actual)
 
-        # If narration is longer than the source span, extend src_end into the
-        # rest of the recording so we have video to show.
-        if alen > 0 and target_dur > src_dur and video_length > 0:
-            extend = target_dur - src_dur
-            new_end = min(video_length - 0.05, src_end + extend)
-            src_end = new_end
-            src_dur = src_end - src_start
-        elif alen > 0 and target_dur < src_dur:
-            # Narration shorter than source span: trim source to match.
-            src_end = src_start + target_dur
+    log.info(
+        "per-clip durations (estimated): %s",
+        [f"{d:.1f}s" for d in per_clip_audio_dur],
+    )
 
-        plans.append((src_start, src_end, target_dur))
-
-    # 3. Build tracks.
+    # 3. Build timeline: video clips trimmed to match estimated audio segment lengths.
     tl = Timeline(client._conn)
     video_track = Track(z_index=0)
     audio_track = Track(z_index=1)
     badge_track = Track(z_index=2)
 
-    cursor_int = 0  # Track.add_clip takes integer start
-    cursor_float = 0.0  # cumulative float for narration alignment
-    for i, ((src_start, src_end, output_dur), (aid, alen)) in enumerate(zip(plans, narration)):
+    total_float = 0.0
+    placed = 0
+    for i, (sc, aud_dur) in enumerate(zip(clips, per_clip_audio_dur)):
+        src_start = max(0.0, sc.start)
+        src_end = min(video_length - 0.05 if video_length > 0 else sc.end, sc.end)
+        src_dur = max(0.5, src_end - src_start)
+
+        # Video clip duration = estimated audio duration for this segment.
+        output_dur = max(2.0, aud_dur)
+
+        # If audio longer than available source span, extend into recording.
+        if output_dur > src_dur and video_length > 0:
+            src_end = min(video_length - 0.05, src_start + output_dur)
+        elif output_dur < src_dur:
+            src_end = src_start + output_dur
+
         if output_dur < 0.5:
             log.warning("clip %d: output_dur=%.2f too short; skipping", i, output_dur)
             continue
 
-        # Place video clip.
+        cursor = int(round(total_float))
+
         v_asset = VideoAsset(id=video_id, start=src_start, volume=source_volume)
         v_clip = Clip(asset=v_asset, duration=output_dur)
-        video_track.add_clip(cursor_int, v_clip)
+        video_track.add_clip(cursor, v_clip)
 
-        # Place narration audio clip at same start on audio track.
-        if aid:
-            a_asset = AudioAsset(id=aid, start=0, volume=1.0)
-            a_clip = Clip(asset=a_asset, duration=alen)
-            audio_track.add_clip(cursor_int, a_clip)
-
-        # Badge overlay: category + filename at top-left throughout clip.
         try:
             badge = TextAsset(
                 text=_badge_text(clips[i]),
@@ -160,20 +156,26 @@ def render(
                 background=Background(width=0.0, height=0.0, color="#000000", opacity=0.7),
             )
             badge_clip = Clip(asset=badge, duration=output_dur, position=Position.top_left, opacity=0.9)
-            badge_track.add_clip(cursor_int, badge_clip)
+            badge_track.add_clip(cursor, badge_clip)
         except Exception as e:  # noqa: BLE001
             log.debug("badge skipped for clip %d: %s", i, e)
 
-        cursor_float += output_dur
-        cursor_int = int(round(cursor_float))
+        total_float += output_dur
+        placed += 1
+
+    # Place single audio asset at position 0 — spans entire timeline.
+    if audio_id and audio_total_len > 0:
+        a_asset = AudioAsset(id=audio_id, start=0, volume=1.0)
+        a_clip = Clip(asset=a_asset, duration=audio_total_len)
+        audio_track.add_clip(0, a_clip)
 
     tl.add_track(video_track)
     tl.add_track(audio_track)
     tl.add_track(badge_track)
 
     log.info(
-        "timeline: %d clips, total runtime %.1fs (video=%d items, audio=%d items)",
-        len(plans), cursor_float, len(video_track.clips), len(audio_track.clips),
+        "timeline: %d clips placed, total video=%.1fs, audio=%.1fs",
+        placed, total_float, audio_total_len,
     )
 
     try:
@@ -183,8 +185,8 @@ def render(
 
     return RenderResult(
         hls_url=url,
-        narration_text="\n---\n".join(per_clip_scripts),
-        narration_asset_ids=[a for a, _ in narration if a],
-        clip_count=len(plans),
-        total_seconds=cursor_float,
+        narration_text=combined_script,
+        narration_asset_ids=[audio_id] if audio_id else [],
+        clip_count=placed,
+        total_seconds=total_float,
     )

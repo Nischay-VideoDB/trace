@@ -82,9 +82,13 @@ def build_focus(
     """Score every changed file and return the top `max_areas` to review."""
     by_path: dict[str, FocusEntry] = {}
 
+    IGNORE_PATTERNS = (".pyc", ".pyo", "__pycache__", ".egg-info", ".dist-info", ".so", ".lock")
+
     for f in pr_files:
         path = f.get("path", "")
         if not path:
+            continue
+        if any(pat in path for pat in IGNORE_PATTERNS):
             continue
         entry = FocusEntry(file_path=path, ranges=_hunk_ranges(f.get("patch", "") or ""))
 
@@ -104,13 +108,14 @@ def build_focus(
                 entry.evidence.append(m.evidence)
                 break
 
-        # Uncertainty in transcript while file was being edited (approximated as
-        # any uncertain phrase in the session if file appears in diff at all)
+        # Uncertainty in transcript — only if file basename mentioned near the phrase
+        basename = os.path.basename(path)
         for seg in transcript.segments:
-            if UNCERTAIN_RE.search(seg.text or ""):
+            text = seg.text or ""
+            if UNCERTAIN_RE.search(text) and basename in text:
                 entry.reasons.append("verbal uncertainty")
                 entry.score += 1
-                entry.evidence.append(seg.text.strip())
+                entry.evidence.append(text.strip())
                 break
 
         if entry.score > 0 or changes >= LARGE_CHANGE_THRESHOLD:

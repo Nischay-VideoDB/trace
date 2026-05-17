@@ -27,7 +27,7 @@ from pathlib import Path
 from typing import Any
 
 import videodb
-from videodb import IndexType, MediaType, SceneExtractionType, SearchType
+from videodb import IndexType, MediaType, SandboxModel, SandboxTier, SceneExtractionType, SearchType
 from videodb.collection import Collection
 from videodb.exceptions import (
     AuthenticationError as _VDBAuthError,
@@ -82,6 +82,58 @@ class VideoDBClient:
         except Exception as e:  # noqa: BLE001
             raise _wrap(e) from e
         log.info("connected to VideoDB collection=%s", self._collection.id)
+        self._sandbox = None  # lazy spun-up when voice generation needs it
+
+    # ---- sandbox lifecycle ---------------------------------------------
+
+    def ensure_sandbox(self, tier: str = "small"):
+        """Spin up (or reuse) a compute sandbox for GenAI workloads.
+
+        Checks for any existing active sandbox first to avoid creating duplicates
+        and burning credits unnecessarily.
+        """
+        # Check if our cached sandbox is still alive.
+        if self._sandbox is not None:
+            try:
+                self._sandbox.refresh()
+                if getattr(self._sandbox, "is_active", False) or getattr(self._sandbox, "status", "") == "active":
+                    return self._sandbox
+            except Exception:  # noqa: BLE001
+                self._sandbox = None
+
+        # Reuse any already-active sandbox from the account — only if tier matches.
+        try:
+            for sb in self._conn.list_sandboxes():
+                if getattr(sb, "status", "") == "active":
+                    sb_tier = str(getattr(sb, "tier", "")).lower()
+                    if tier == "medium" and "medium" not in sb_tier:
+                        log.info("skipping sandbox %s (tier=%s, need medium)", sb.id, sb_tier)
+                        continue
+                    log.info("reusing existing active sandbox id=%s tier=%s", sb.id, sb_tier)
+                    self._sandbox = sb
+                    return sb
+        except Exception:  # noqa: BLE001
+            pass
+
+        chosen = SandboxTier.small if tier == "small" else SandboxTier.medium
+        log.info("creating VideoDB sandbox tier=%s ...", chosen)
+        sandbox = self._conn.create_sandbox(tier=chosen, name="trace-tts")
+        sandbox.wait_for_ready(timeout=300, interval=5)
+        log.info("sandbox ready: id=%s", sandbox.id)
+        self._sandbox = sandbox
+        return sandbox
+
+    def stop_sandbox(self) -> None:
+        if self._sandbox is None:
+            return
+        try:
+            log.info("stopping sandbox %s", self._sandbox.id)
+            self._sandbox.stop()
+            self._sandbox.wait_for_stop(timeout=120)
+        except Exception as e:  # noqa: BLE001
+            log.warning("sandbox stop failed: %s", e)
+        finally:
+            self._sandbox = None
 
     # ---- Collection-level: live ingest (CaptureSession/RTStream req) ----
 
@@ -170,17 +222,34 @@ class VideoDBClient:
         prompt: str,
         time_seconds: int = 10,
         frame_count: int = 3,
+        sandbox_id: str | None = None,
     ) -> str:
         """Custom-prompt scene index. Depth lever for visual classification.
 
+        Pass sandbox_id to route through a compute sandbox for better VLM models.
         Returns the scene index id for later search.
         """
         try:
-            return video.index_scenes(
+            kwargs: dict[str, Any] = dict(
                 extraction_type=SceneExtractionType.time_based,
                 extraction_config={"time": time_seconds, "frame_count": frame_count},
                 prompt=prompt,
             )
+            if sandbox_id:
+                kwargs["sandbox_id"] = sandbox_id
+                # Try 26B first (compatible with medium tier); fall back to 31B.
+                for model in (SandboxModel.GEMMA_4_26B, SandboxModel.GEMMA_4_31B):
+                    try:
+                        kwargs["model_name"] = model
+                        return video.index_scenes(**kwargs)
+                    except Exception as e:  # noqa: BLE001
+                        if "not compatible" in str(e).lower() or "invalid" in str(e).lower():
+                            log.warning("model %s rejected (%s); trying next", model, e)
+                            continue
+                        raise _wrap(e) from e
+                # Both models failed — try without model_name (default VLM)
+                kwargs.pop("model_name", None)
+            return video.index_scenes(**kwargs)
         except Exception as e:  # noqa: BLE001
             raise _wrap(e) from e
 
@@ -259,10 +328,35 @@ class VideoDBClient:
             raise _wrap(e) from e
 
     def generate_voice(self, text: str, *, voice: str = "Default"):
-        """VideoDB-hosted TTS. Returns an Audio asset."""
+        """VideoDB-hosted TTS via sandbox OmniVoice.
+
+        Requires hackathon compute credits to be active on the account.
+        If the quota error persists after credits are claimed, the plan_id
+        needs to be upgraded by the VideoDB team (contact@videodb.io).
+        """
+        sandbox = self.ensure_sandbox(tier="small")
         try:
-            return self._collection.generate_voice(text=text, voice_name=voice)
+            log.info("generate_voice via sandbox OmniVoice (sandbox=%s)", sandbox.id)
+            kwargs: dict = dict(
+                text=text,
+                model_name=SandboxModel.OMNIVOICE,
+                sandbox_id=sandbox.id,
+                wait=True,
+                timeout=900,
+                poll_interval=5,
+            )
+            # Pin voice if OmniVoice supports voice_name parameter.
+            if voice and voice != "Default":
+                kwargs["voice_name"] = voice
+            return self._collection.generate_voice(**kwargs)
         except Exception as e:  # noqa: BLE001
+            msg = str(e)
+            if "maximum limit" in msg or "Voice generation" in msg:
+                raise _wrap(Exception(
+                    "Voice generation quota exceeded. Your account plan_id is still Free_v1. "
+                    "Contact contact@videodb.io or the hackathon Discord to upgrade your plan "
+                    "so sandbox OmniVoice is unblocked."
+                )) from e
             raise _wrap(e) from e
 
     # ---- Stream / clip URLs --------------------------------------------

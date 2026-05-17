@@ -104,7 +104,7 @@ def build(
     pr_title: str = "",
     video_url: str | None = None,
     contribution_url: str | None = None,
-    preview_gif_url: str | None = None,
+    preview_thumb_url: str | None = None,
     model: str = "pro",
 ) -> PRDescription:
     bullets = _file_bullets(files)
@@ -130,11 +130,17 @@ def build(
         why = why[:1500].rsplit(".", 1)[0] + "."
 
     sections: list[str] = []
-    if preview_gif_url:
+    if preview_thumb_url and video_url:
+        # Clickable thumbnail: image links to the HLS URL (opens in new tab).
         sections.append(
             f"## trace walkthrough\n\n"
-            f"![preview]({preview_gif_url})\n\n"
-            f"_Silent 10s preview. Full narrated video: {video_url}_\n"
+            f"[![watch the narrated PR walkthrough]({preview_thumb_url})]({video_url})\n\n"
+            f"_Click the thumbnail to play the narrated walkthrough._\n"
+        )
+    elif video_url:
+        sections.append(
+            f"## trace walkthrough\n\n"
+            f"[Watch the narrated PR walkthrough]({video_url})\n"
         )
     sections.append("\n## What changed\n\n" + "\n".join(bullets) if bullets else "\n## What changed\n\n_no files in diff._")
     sections.append("\n## Why\n\n" + why)
