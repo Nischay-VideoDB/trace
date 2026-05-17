@@ -138,16 +138,24 @@ def collect_agent_edits(
     log.info("ai_windows: %d (scenes+transcript)", len(ai_windows))
 
     # ── 5. Classify each saved file ──────────────────────────────────────────
+    # A file can have both human and agent saves (e.g. human edits early,
+    # Claude edits later). Track both counts; caller uses __mixed__ sentinel.
     agent_files: dict[str, set[str]] = {}
     for rel_path, save_offsets in session_saves.items():
+        has_agent = False
+        has_human = False
         for offset in save_offsets:
-            for ws, we in ai_windows:
-                if ws - 5 <= offset <= we + 5:
-                    agent_files[rel_path] = {"__agent__"}
-                    log.debug("agent signal: %s saved at %.1fs, ai_window [%.1f-%.1f]", rel_path, offset, ws, we)
-                    break
-            if rel_path in agent_files:
-                break
+            in_ai = any(ws - 5 <= offset <= we + 5 for ws, we in ai_windows)
+            if in_ai:
+                has_agent = True
+                log.debug("agent signal: %s saved at %.1fs", rel_path, offset)
+            else:
+                has_human = True
+        if has_agent and has_human:
+            agent_files[rel_path] = {"__mixed__"}
+        elif has_agent:
+            agent_files[rel_path] = {"__agent__"}
+        # has_human only → not in agent_files → mapper labels as human
 
     log.info(
         "agent files: %d / %d total saved files",

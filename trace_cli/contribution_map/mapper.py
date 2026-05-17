@@ -97,12 +97,14 @@ def classify(
         contribution = FileContribution(path=path)
         base = os.path.basename(path)
 
-        if base in agent_basenames:
+        # Check for mixed sentinel first (both human and agent saves observed).
+        agent_val = next((v for k, v in agent_edits_by_file.items() if os.path.basename(k) == base), None)
+        if agent_val == {"__mixed__"}:
+            file_label = "mixed"
+        elif base in agent_basenames:
             file_label = "agent"
         elif base in saved_basenames:
             file_label = "human"
-        elif not any_session_evidence:
-            file_label = "unknown"
         else:
             file_label = "unknown"
 
