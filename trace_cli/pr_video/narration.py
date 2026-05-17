@@ -21,7 +21,7 @@ from trace_cli.videodb.client import VideoDBClient
 
 log = logging.getLogger("trace.pr_video.narration")
 
-CHARS_PER_SEC = 15
+CHARS_PER_SEC = 13  # OmniVoice measured ~12-14 cps at normal pace
 HARD_MAX = 2000
 
 
@@ -124,8 +124,8 @@ def build_per_clip_scripts(
 
     chunk_specs = []
     for i, c in enumerate(clips):
-        target_s = max(3, int(c.duration * 0.8))
-        target_chars = max(60, int(target_s * CHARS_PER_SEC))
+        target_s = max(3, int(c.duration))
+        target_chars = max(80, int(target_s * CHARS_PER_SEC))
         kind = {
             "progress": "edit-and-save",
             "speech":   "thinking-out-loud",
@@ -137,11 +137,11 @@ def build_per_clip_scripts(
         scene_text = _format_scene_for_prompt(_scenes_for_clip(scenes, c))
         scene_hint = f" On screen: {scene_text[:400]}" if scene_text else ""
         chunk_specs.append(
-            f"<chunk index={i} max_chars={target_chars} kind={kind}{file_hint}>"
+            f"<chunk index={i} target_chars={target_chars} kind={kind}{file_hint}>"
             f"{spoken}{scene_hint}</chunk>"
         )
 
-    total_target_chars = sum(max(60, int(c.duration * 0.8 * CHARS_PER_SEC)) for c in clips)
+    total_target_chars = sum(max(80, int(c.duration * CHARS_PER_SEC)) for c in clips)
     prompt = (
         f"Write a PR walkthrough narration split across {len(clips)} sequential chunks. "
         "Each chunk plays over a different clip of the recording, so DO NOT repeat content "
@@ -160,13 +160,14 @@ def build_per_clip_scripts(
         "session in a calm, factual voice. Short sentences. Plain English. "
         "No markdown, no labels, no phrases like 'in this clip' or 'now I will'.\n\n"
         f"PR: {pr_title}. {pr_summary[:200]}\n\n"
-        "Chunks (preserve order, do not exceed each max_chars):\n"
+        "Chunks (each chunk MUST reach its target_chars — fill the time, don't cut short):\n"
         + "\n".join(chunk_specs)
         + "\n\nFormat output EXACTLY like this, one chunk per line, no extra text:\n"
         "[0] <narration for chunk 0>\n"
         "[1] <narration for chunk 1>\n"
         f"... up to [{len(clips) - 1}]\n\n"
-        f"Total budget about {total_target_chars} characters across all chunks. "
+        f"Total target: {total_target_chars} characters across all chunks. "
+        "Each chunk must be close to its target_chars. Expand with relevant detail from context. "
         "One coherent story arc, no repetition, no hallucination."
     )
 
@@ -210,7 +211,7 @@ def build_per_clip_scripts(
     scripts: list[str] = []
     for i, c in enumerate(clips):
         text = parsed[i].strip() if i < len(parsed) else ""
-        target_chars = max(60, int(c.duration * 0.8 * CHARS_PER_SEC))
+        target_chars = max(80, int(c.duration * CHARS_PER_SEC))
         if not text:
             text = c.spoken or c.evidence or "Continuing the change."
         text = _trim_at_sentence(text, target_chars)

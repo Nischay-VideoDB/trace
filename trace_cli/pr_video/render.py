@@ -295,7 +295,14 @@ def render(
             continue
 
         src_start = int(max(0, sc.start))
-        output_dur = aud_dur
+        src_dur = max(0.5, sc.end - sc.start)
+        # Video shows for max(narration_length, source_clip_duration) so the
+        # screen stays on the relevant moment even if narration ends early.
+        output_dur = max(aud_dur, src_dur)
+        if video_length > 0:
+            max_src_end = video_length - 0.1
+            output_dur = min(output_dur, max_src_end - src_start)
+        output_dur = max(aud_dur, 2.0)  # always at least as long as audio
 
         video_track.add_clip(cursor, Clip(
             asset=VideoAsset(id=video_id, start=src_start, volume=0),
