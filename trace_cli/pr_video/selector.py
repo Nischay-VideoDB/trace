@@ -79,11 +79,12 @@ def select_clips(
     diff_files: list[str],
     *,
     min_total: float = 10.0,
-    max_total: float = 150.0,
+    max_total: float = 142.0,
     max_clips: int = 14,
     pad_seconds: float = 2.0,
     min_clip_seconds: float = 3.0,
-    max_clip_seconds: float = 15.0,
+    max_clip_seconds: float = 12.0,
+    max_research_seconds: float = 15.0,
 ) -> list[Clip]:
     """Pick narrative-covering clips ordered by start time.
 
@@ -98,7 +99,7 @@ def select_clips(
     diff_set = set(diff_files)
     end_s = timeline.session_end_seconds
 
-    def _make_clip(m, override_cat=None) -> Clip:
+    def _make_clip(m, override_cat=None, cap: float | None = None) -> Clip:
         cat = override_cat or m.category
         start = max(0.0, m.start_seconds - pad_seconds)
         end = min(end_s, m.end_seconds + pad_seconds)
@@ -108,8 +109,9 @@ def select_clips(
             end = min(end_s, end + need)
             if (end - start) < min_clip_seconds:
                 start = max(0.0, start - (min_clip_seconds - (end - start)))
-        if (end - start) > max_clip_seconds:
-            end = start + max_clip_seconds
+        clip_cap = cap if cap is not None else max_clip_seconds
+        if (end - start) > clip_cap:
+            end = start + clip_cap
         fp = _path_matches_diff(m.evidence, diff_set) if cat == "progress" else None
         return Clip(
             start=start, end=end,
@@ -126,13 +128,15 @@ def select_clips(
     tier_progress_diff: list[Clip] = []
     tier_speech_other: list[Clip] = []
     tier_progress_other: list[Clip] = []
+    tier_intro_speech: list[Clip] = []  # first meaningful speech = session intro
 
     for m in timeline.moments:
         if m.confidence == 0.0 and m.category == "progress":
             continue  # gap-fill markers
 
         if m.category == "research":
-            c = _make_clip(m)
+            # Cap research clips so they don't eat the whole budget.
+            c = _make_clip(m, cap=max_research_seconds)
             if c.duration >= min_clip_seconds * 0.5:
                 tier_research.append(c)
 
@@ -146,7 +150,11 @@ def select_clips(
             elif _BUG_RE.search(ev):
                 tier_bug_speech.append(c)
             elif len(ev) > 20:
-                tier_speech_other.append(c)
+                # First speech moment in session = intro.
+                if not tier_intro_speech and m.start_seconds < end_s * 0.15:
+                    tier_intro_speech.append(c)
+                else:
+                    tier_speech_other.append(c)
 
         elif m.category == "progress":
             if _is_junk_path(m.evidence):
@@ -166,9 +174,9 @@ def select_clips(
                 tier_bug_speech.append(c)
 
     log.info(
-        "candidate tiers: research=%d ai_speech=%d bug_speech=%d progress_diff=%d speech_other=%d progress_other=%d",
-        len(tier_research), len(tier_ai_speech), len(tier_bug_speech),
-        len(tier_progress_diff), len(tier_speech_other), len(tier_progress_other),
+        "candidate tiers: intro=%d research=%d ai_speech=%d bug_speech=%d progress_diff=%d speech_other=%d",
+        len(tier_intro_speech), len(tier_research), len(tier_ai_speech),
+        len(tier_bug_speech), len(tier_progress_diff), len(tier_speech_other),
     )
 
     # Merge overlapping clips within each tier (same category, overlapping spans).
@@ -187,6 +195,7 @@ def select_clips(
                 out.append(c)
         return out
 
+    tier_intro_speech = _merge(tier_intro_speech)
     tier_research = _merge(tier_research)
     tier_ai_speech = _merge(tier_ai_speech)
     tier_bug_speech = _merge(tier_bug_speech)
@@ -198,10 +207,14 @@ def select_clips(
     chosen: list[Clip] = []
     total = 0.0
 
+    chosen_ids: set[int] = set()
+
     def _add(candidates: list[Clip], limit: int | None = None) -> None:
         nonlocal total
         added = 0
         for c in candidates:
+            if id(c) in chosen_ids:
+                continue
             if total + c.duration > max_total:
                 continue
             if len(chosen) >= max_clips:
@@ -209,28 +222,44 @@ def select_clips(
             if limit is not None and added >= limit:
                 break
             chosen.append(c)
+            chosen_ids.add(id(c))
             total += c.duration
             added += 1
 
-    # Always include research (docs reading — shows what dev looked up).
+    # Session intro — first speech moment sets the scene.
+    _add(tier_intro_speech, limit=1)
+
+    # Research (docs reading) — capped clip, always include.
     _add(tier_research)
 
-    # Code edits on diff files — up to 3 (show actual work on screen).
-    _add(tier_progress_diff, limit=3)
+    # Code edits on real diff files — one clip per unique file for variety,
+    # then allow one more per file if budget remains.
+    seen_files: set[str] = set()
+    first_per_file: list[Clip] = []
+    extras: list[Clip] = []
+    for c in tier_progress_diff:
+        fp = c.file_path or ""
+        if fp not in seen_files:
+            seen_files.add(fp)
+            first_per_file.append(c)
+        else:
+            extras.append(c)
+    _add(first_per_file)           # one per unique file first
+    _add(extras, limit=1)          # allow one repeat if budget allows
 
-    # AI invocation speech — up to 3 (talking to Claude/Copilot).
-    _add(tier_ai_speech, limit=3)
+    # AI invocation speech — up to 4 (core demo: developer + Claude).
+    _add(tier_ai_speech, limit=4)
 
-    # Bug/error speech — up to 2 (problem + fix arc).
-    _add(tier_bug_speech, limit=2)
+    # Bug/error speech — up to 3 (problem + fix arc).
+    _add(tier_bug_speech, limit=3)
 
-    # Other explanatory speech — up to 2 for context.
-    _add(tier_speech_other, limit=2)
-
-    # More code edit clips if budget allows.
+    # More code edits if budget allows.
     _add(tier_progress_diff, limit=2)
 
-    # Progress on non-diff files — fill remaining budget.
+    # Explanatory speech for context.
+    _add(tier_speech_other, limit=2)
+
+    # Non-diff progress — remaining budget.
     _add(tier_progress_other, limit=1)
 
     if total < min_total:
@@ -245,24 +274,9 @@ def select_clips(
     # Sort chronologically for the final video.
     chosen.sort(key=lambda c: c.start)
 
-    # Final de-overlap pass: if clips from different tiers overlap, trim the
-    # lower-priority one. Priority: research > ai_speech/bug > progress > speech.
-    _prio = {"research": 4, "stuck": 3, "speech": 2, "progress": 1}
-    for i in range(len(chosen)):
-        for j in range(i + 1, len(chosen)):
-            a, b = chosen[i], chosen[j]
-            if b.start >= a.end:
-                break
-            overlap = a.end - b.start
-            if overlap <= 1.0:
-                continue
-            # Trim the lower-priority one.
-            if _prio.get(a.category, 1) >= _prio.get(b.category, 1):
-                b.start = a.end
-            else:
-                a.end = b.start
-
+    # Drop any clips that got squashed too short (shouldn't happen but guard).
     chosen = [c for c in chosen if (c.end - c.start) >= min_clip_seconds * 0.5]
+    # Sort chronologically — source overlaps are fine, render places them sequentially.
     chosen.sort(key=lambda c: c.start)
 
     log.info(
