@@ -140,21 +140,39 @@ def _dedupe_by_window(hits: list[SearchHit], window: float = 8.0) -> list[Search
     return kept
 
 
-def build_reply(question: str, hits: list[SearchHit], clip_urls: list[str]) -> str:
+def _llm_summary(client: VideoDBClient, question: str, hits: list[SearchHit]) -> str:
+    """Use VideoDB LLM to synthesize a direct answer from hit snippets."""
+    context = "\n".join(
+        f"[{h.start:.0f}s-{h.end:.0f}s {h.kind}] {h.text}" for h in hits
+    )
+    prompt = (
+        f"You are a coding session assistant. "
+        f"A reviewer asked: \"{question}\"\n\n"
+        f"These are the most relevant moments from the session recording:\n{context}\n\n"
+        f"Answer the reviewer's question in 1-2 sentences using only information from the session. "
+        f"Be specific and direct. Do not mention timestamps or clip IDs."
+    )
+    try:
+        return client.generate_text(prompt, model="basic").strip()
+    except Exception:  # noqa: BLE001
+        return ""
+
+
+def build_reply(question: str, hits: list[SearchHit], clip_urls: list[str], summary: str = "") -> str:
     if not hits:
-        return (
-            f"**trace-bot**: no matching moment found for `{question[:120]}`."
-        )
+        return f"**trace-bot**: no matching moment found for `{question[:120]}`."
 
     lines = [f"**trace-bot** — _{question[:160]}_", ""]
+    if summary:
+        lines.append(summary)
+        lines.append("")
     for h, url in zip(hits, clip_urls):
-        snippet = h.text[:160].replace("\n", " ")
+        snippet = h.text[:120].replace("\n", " ")
         ts = f"{h.start:.0f}s–{h.end:.0f}s"
         lines.append(f"**[{ts}]** {snippet}")
         lines.append(f"> {url}")
         lines.append("")
-    body = "\n".join(lines).rstrip()
-    return body[:MAX_REPLY_CHARS]
+    return "\n".join(lines).rstrip()[:MAX_REPLY_CHARS]
 
 
 def answer_one(
@@ -188,7 +206,8 @@ def answer_one(
             log.warning("clip url gen failed for [%.1f-%.1f] (%s)", h.start, h.end, e)
             clip_urls.append("(clip unavailable)")
 
-    body = build_reply(question, hits, clip_urls)
+    summary = _llm_summary(client, question, hits) if hits else ""
+    body = build_reply(question, hits, clip_urls, summary=summary)
     return gh.post_comment(pr_url, body)
 
 
