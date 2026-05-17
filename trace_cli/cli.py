@@ -1,4 +1,4 @@
-"""Trace CLI entry point. Subcommands: start, stop, generate, replay, serve, qa-poll."""
+"""Trace CLI entry point. Subcommands: start, stop, generate, serve, qa-poll."""
 from __future__ import annotations
 
 import logging
@@ -276,42 +276,11 @@ def ship(
 
 
 @app.command()
-def replay(
-    session_id: str = typer.Option(..., "--session"),
-    file: str = typer.Option(..., "--file"),
-    start: int = typer.Option(..., "--start"),
-    end: int = typer.Option(..., "--end"),
-) -> None:
-    """Decision Replay: show edit history for a file/line range (CLI form)."""
-    Credentials.require("VIDEODB_API_KEY")
-    from trace_cli.decision_replay.service import (
-        FileNotInSession, InvalidRange, query as replay_query,
-    )
-    try:
-        intervals = replay_query(session_id, file, start, end)
-    except InvalidRange as e:
-        console.print(f"[red]invalid range: {e}[/red]")
-        sys.exit(1)
-    except FileNotInSession as e:
-        console.print(f"[red]{e}[/red]")
-        sys.exit(1)
-
-    if not intervals:
-        console.print("[yellow]no edit history found for that file/range[/yellow]")
-        return
-
-    console.print(f"[green]{len(intervals)} intervals[/green]")
-    for iv in intervals:
-        console.print(f"  [{iv.start_seconds:.1f}-{iv.end_seconds:.1f}s] {iv.description}")
-        console.print(f"    clip: {iv.clip_url}")
-
-
-@app.command()
 def serve(
     host: str = typer.Option("127.0.0.1", "--host"),
     port: int = typer.Option(8000, "--port"),
 ) -> None:
-    """Run FastAPI app: /replay UI + /webhook/github."""
+    """Run FastAPI app: /webhook/github."""
     Credentials.require("VIDEODB_API_KEY", "GITHUB_TOKEN")
     import uvicorn
     uvicorn.run("trace_cli.web.app:app", host=host, port=port, reload=False)
@@ -473,56 +442,6 @@ def focus(
         from trace_cli.github.client import GitHubClient
         url = GitHubClient().post_comment(pr_url, body)
         console.print(f"\n[green]posted: {url}[/green]")
-
-
-@app.command("bug-replay")
-def bug_replay(
-    session_id: str = typer.Argument(..., help="Session id"),
-    pr_url: str = typer.Option(None, "--pr", help="Optional PR to post the clip to"),
-    post: bool = typer.Option(False, "--post", help="Post comment to PR (needs --pr)"),
-    pr_title: str = typer.Option("this change", "--title", help="PR title used in narration"),
-) -> None:
-    """Detect failure->error->fix arc and render the bug-replay mini clip."""
-    Credentials.require("VIDEODB_API_KEY")
-    from trace_cli.pr_video.bug_replay import detect_bug_arc, render_bug_clip
-    from trace_cli.session.models import Transcript
-    from trace_cli.session.store import SessionStore
-    from trace_cli.timeline.builder import from_json as tj
-    from trace_cli.videodb.client import VideoDBClient
-
-    store = SessionStore()
-    meta = store.read_metadata(session_id)
-    tl = tj(store.timeline_path(session_id).read_text(encoding="utf-8"))
-    tr = Transcript.model_validate_json(store.transcript_path(session_id).read_text(encoding="utf-8"))
-    client = VideoDBClient()
-    video = client.get_video(meta.video_id)
-    scene_idx_id = meta.model_dump().get("scene_index_id")
-    scenes = client.get_scenes(video, scene_idx_id) if scene_idx_id else []
-    arc = detect_bug_arc(tl, tr, scenes)
-    if not arc:
-        console.print("[yellow]no clear failure->fix arc in this session[/yellow]")
-        return
-    console.print(f"[bold]arc detected[/bold]: failure_t={arc.failure_t:.1f} fix_t={arc.fix_t}")
-    console.print(f"  failure: {arc.failure_evidence}")
-    if arc.error_evidence:
-        console.print(f"  error:   {arc.error_evidence}")
-    console.print(f"  fix:     {arc.fix_evidence}")
-    out = render_bug_clip(client, meta.video_id, arc, pr_title=pr_title)
-    if not out:
-        console.print("[red]render failed[/red]")
-        sys.exit(1)
-    url, narration = out
-    console.print(f"\n[green]HLS URL:[/green] {url}")
-    console.print(f"[dim]narration:[/dim] {narration}")
-    if post and pr_url:
-        Credentials.require("GITHUB_TOKEN")
-        from trace_cli.github.client import GitHubClient
-        body = (
-            "## trace - Replay the Bug\n\n"
-            f"Auto-detected a failure-to-fix arc.\n\n**Watch:** {url}"
-        )
-        c_url = GitHubClient().post_comment(pr_url, body)
-        console.print(f"[green]posted: {c_url}[/green]")
 
 
 @app.command("contribution-map")
