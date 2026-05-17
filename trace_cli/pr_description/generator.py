@@ -104,6 +104,7 @@ def build(
     pr_title: str = "",
     video_url: str | None = None,
     contribution_url: str | None = None,
+    preview_gif_url: str | None = None,
     model: str = "pro",
 ) -> PRDescription:
     bullets = _file_bullets(files)
@@ -129,7 +130,13 @@ def build(
         why = why[:1500].rsplit(".", 1)[0] + "."
 
     sections: list[str] = []
-    sections.append("## What changed\n\n" + "\n".join(bullets) if bullets else "## What changed\n\n_no files in diff._")
+    if preview_gif_url:
+        sections.append(
+            f"## trace walkthrough\n\n"
+            f"![preview]({preview_gif_url})\n\n"
+            f"_Silent 10s preview. Full narrated video: {video_url}_\n"
+        )
+    sections.append("\n## What changed\n\n" + "\n".join(bullets) if bullets else "\n## What changed\n\n_no files in diff._")
     sections.append("\n## Why\n\n" + why)
 
     if stuck_bits:
