@@ -29,8 +29,17 @@ dev = [
 [project.scripts]
 trace = "trace_cli.cli:app"
 
-[tool.uv]
-package = true
+[project.optional-dependencies]
+macos = [
+    "videodb[capture]>=0.4.5",
+    "watchdog>=4.0",
+]
+windows = [
+    "videodb[capture]>=0.4.5",
+    "watchdog>=4.0",
+    "pywin32>=306",
+    "psutil>=6.0",
+]
 
 [tool.uv.sources]
 videodb = { git = "https://github.com/video-db/videodb-python.git", rev = "hackathon" }
