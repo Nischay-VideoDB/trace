@@ -1,7 +1,7 @@
-"""Reviewer Q&A: parse @trace mentions on PR comments, answer with session clips.
+"""Reviewer Q&A: parse /trace mentions on PR comments, answer with session clips.
 
 Flow per polled comment:
-  1. Extract question text after the first @trace token (R6.1).
+  1. Extract question text after the first /trace token (R6.1).
   2. Look up session linked to PR via SessionStore.session_for_pr.
   3. Run two semantic searches against the indexed Video:
        a. spoken_word index: matches what the developer said.
@@ -26,7 +26,7 @@ from trace_cli.videodb.client import VideoDBClient
 
 log = logging.getLogger("trace.qa")
 
-MENTION_RE = re.compile(r"@trace\b\s*(.+)", re.IGNORECASE | re.DOTALL)
+MENTION_RE = re.compile(r"/trace\b\s*(.+)", re.IGNORECASE | re.DOTALL)
 MAX_QUESTION_CHARS = 1000
 MAX_REPLY_CHARS = 500
 RELEVANCE_THRESHOLD = 0.2
@@ -43,7 +43,7 @@ class SearchHit:
 
 
 def extract_question(body: str) -> str:
-    """R6.1: take text after first @trace, strip, truncate."""
+    """R6.1: take text after first /trace, strip, truncate."""
     if not body:
         return ""
     m = MENTION_RE.search(body)
@@ -113,11 +113,11 @@ def _dedupe_by_window(hits: list[SearchHit], window: float = 8.0) -> list[Search
 def build_reply(question: str, hits: list[SearchHit], clip_urls: list[str]) -> str:
     if not hits:
         return (
-            f"**@trace**: I could not find a matching moment in the session for "
+            f"**trace-bot**: I could not find a matching moment in the session for "
             f"`{question[:120]}`. The session may not have covered that part."
         )[:MAX_REPLY_CHARS]
 
-    lines = [f"**@trace** answer for: _{question[:160]}_", ""]
+    lines = [f"**trace-bot** answer for: _{question[:160]}_", ""]
     for h, url in zip(hits, clip_urls):
         snippet = h.text[:140].replace("\n", " ")
         lines.append(f"- [{h.start:.0f}-{h.end:.0f}s {h.kind}] {snippet}")
@@ -142,7 +142,7 @@ def answer_one(
     store = SessionStore()
     meta = store.read_metadata(session_id)
     if not meta.video_id:
-        body = "**@trace**: session not yet indexed; try again after `trace stop` completes."
+        body = "**trace-bot**: session not yet indexed; try again after `trace stop` completes."
         return gh.post_comment(pr_url, body[:MAX_REPLY_CHARS])
 
     video = client.get_video(meta.video_id)
@@ -200,7 +200,7 @@ def poll_loop(
 
     started = time.time()
     last_since = None
-    log.info("polling %s for @trace mentions every %ds (session %s)", pr_url, interval, session_id)
+    log.info("polling %s for /trace mentions every %ds (session %s)", pr_url, interval, session_id)
     while True:
         try:
             comments = gh.list_comments(pr_url, since_iso=last_since)
@@ -212,7 +212,7 @@ def poll_loop(
             cid = int(c["id"])
             if cid in log_done:
                 continue
-            if "@trace" not in c.get("body", "").lower():
+            if "/trace" not in c.get("body", "").lower():
                 continue
             try:
                 reply_url = answer_one(client, gh, pr_url, session_id, cid, c["body"])
