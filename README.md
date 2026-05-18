@@ -12,15 +12,17 @@
 
 Built for the [VideoDB "Give Agents Eyes and Ears" hackathon](https://hackday.videodb.io) (May 16–18, 2026).
 
+**Repo:** https://github.com/crypticsaiyan/trace
+
+**Demo:** The walkthrough video was recorded using trace on https://github.com/crypticsaiyan/trace-test — that repo is the project being captured in the demo session.
+
 ---
 
 ## Screenshots
 
-<!-- TODO: add screenshot of trace start terminal output -->
-<!-- TODO: add screenshot of generated PR comment with video embed -->
-<!-- TODO: add screenshot of /trace Q&A bot reply with clip URLs -->
-<!-- TODO: add screenshot of contribution map comment -->
-<!-- TODO: add screenshot of focus mode comment -->
+![trace CLI](assets/cli.png)
+
+![Landing page](assets/landing_page.png)
 
 ---
 
@@ -47,7 +49,8 @@ trace generate <session_id> [pr_url]
     with AI title/body, then runs the full generate pipeline
 
 trace serve
-    runs a FastAPI web server: /webhook/github for the /trace reviewer bot
+    runs a FastAPI web server: GET / (landing), GET /docs, GET /api/sessions
+    pair with `trace qa-poll` for the /trace reviewer bot
 
 trace qa-poll <pr_url> <session_id>
     polls the PR for /trace mentions
@@ -55,7 +58,7 @@ trace qa-poll <pr_url> <session_id>
     replies with up to 3 bounded clip URLs + paraphrased answers
 ```
 
-Additional inspection commands: `trace sessions`, `trace inspect <id>`, `trace timeline <id>`, `trace transcript <id>`, `trace focus`, `trace contribution-map`, `trace pr-description`.
+Inspection commands: `trace sessions`, `trace inspect <id>`, `trace timeline <id>`, `trace transcript <id>`, `trace focus`, `trace contribution-map`, `trace pr-description`.
 
 ---
 
@@ -148,6 +151,14 @@ uv sync --extra windows
 
 Claim your hackathon sandbox credits at [hackday.videodb.io/sandbox.html](https://hackday.videodb.io/sandbox.html).
 
+### Voice generation provider
+
+**Provider:** VideoDB OmniVoice (`SandboxModel.OMNIVOICE`)
+
+**Model/settings:** `response_format=wav`, voice cloning via `ref_audio` + `ref_text` for consistent identity across clips, 4 parallel workers.
+
+**How to switch:** Replace the three `collection.generate_voice(...)` calls in [trace_cli/pr_video/render.py](trace_cli/pr_video/render.py) (labelled: reference voice, per-clip, intro). Each call must produce a VideoDB audio asset — upload your provider's output via `collection.upload(file_path=..., media_type="audio")` and place the returned asset id on the narration track.
+
 ---
 
 ## Quickstart
@@ -184,9 +195,11 @@ uv run trace generate <session_id>
 Run the `/trace` reviewer Q&A bot (long-running):
 
 ```bash
-uv run trace serve
-# or poll directly:
+# poll mode — watch a specific PR:
 uv run trace qa-poll https://github.com/you/repo/pull/N <session_id>
+
+# web server (landing page + /api/sessions):
+uv run trace serve
 ```
 
 Any reviewer comment containing `/trace what about X` triggers a semantic search against the indexed session and posts a reply with up to 3 bounded clip URLs.
@@ -211,7 +224,7 @@ Identifies files touched by `stuck` timeline moments and files with ≥50 change
 Generates a What / Why / Struggles / Follow-ups description from the session transcript and timeline, appended below the existing PR description without modifying it.
 
 ### Tagged timeline
-Four classifiers (progress, stuck, research, speech) run over the indexed session. The merger produces a contiguous, gap-free timeline stored in `~/.trace/sessions/<id>/timeline.json` and registered with the VideoDB Timeline API.
+Four classifiers (progress, stuck, research, speech) run over the indexed session. The merger produces a contiguous, gap-free timeline stored in `~/.trace/sessions/<id>/timeline.json`. The clip selector and narration builder consume this timeline to pick the most meaningful moments for the PR video.
 
 ---
 
@@ -260,8 +273,7 @@ trace_cli/
     render.py                editor.Timeline with 3 tracks: video / audio / badges
     generator.py             end-to-end orchestration
     ship.py                  auto-commit + push + open PR logic (internal, used by generate)
-    preview.py               thumbnail capture + GitHub release asset upload
-    preview.py               local preview helpers
+    preview.py               thumbnail capture + local preview helpers
   focus_mode/
     builder.py               reviewer Focus Mode ranking
   contribution_map/
