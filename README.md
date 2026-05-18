@@ -89,22 +89,50 @@ uv sync --extra windows
 ## Quickstart
 
 ```bash
-# Terminal 1 — record a session on a real git repo
+# 1. Record. --live streams 15s chunks to VideoDB as you code.
 uv run trace start --project /path/to/your/repo --live
 
-# code, talk out loud, make commits
+# ... code, talk out loud, make commits ...
 
-# Terminal 2 — stop and index
+# 2. Stop + index. Uploads to VideoDB, indexes spoken words + scenes, builds timeline.
 uv run trace stop
 
-# Generate PR video (auto-commits, pushes, opens PR, posts video)
+# 3a. Auto-ship: commit staged changes, push, open PR, post narrated video.
 uv run trace generate <session_id>
 
-# Or against an existing PR:
+# 3b. Or against an existing PR:
 uv run trace generate <session_id> https://github.com/you/repo/pull/N
 
-# Start the reviewer Q&A bot
+# 4. Reviewer Q&A bot — polls PR for /trace mentions, replies with clip URLs.
 uv run trace qa-poll https://github.com/you/repo/pull/N <session_id>
+
+# 5. Web server — landing page + /api/sessions.
+uv run trace serve
+
+# --- Inspection ---
+
+# List all sessions.
+uv run trace sessions
+
+# Metadata + timeline summary + transcript head.
+uv run trace inspect <session_id>
+
+# Full tagged timeline (progress / stuck / research / speech).
+uv run trace timeline <session_id>
+
+# Full spoken-word transcript.
+uv run trace transcript <session_id>
+
+# --- Standalone PR decorations ---
+
+# Reviewer Focus Mode: rank files by stuck moments, post review guide.
+uv run trace focus <session_id> --pr https://github.com/you/repo/pull/N --post
+
+# Human vs Agent contribution map: classify each diff line, post summary.
+uv run trace contribution-map <session_id> --pr https://github.com/you/repo/pull/N --post
+
+# What/Why/Struggles/Follow-ups PR description.
+uv run trace pr-description <session_id> --pr https://github.com/you/repo/pull/N --post
 ```
 
 ---
@@ -159,28 +187,6 @@ VideoDB upload          research/speech           + ImageAsset (FLUX)
 **Why chunked live upload instead of CaptureSession:** VideoDB's Capture SDK has no Linux wheel. On Linux Wayland, trace runs a `LiveIndexer` thread that cuts the in-progress mp4 every 15s, uploads via `Collection.upload`, and indexes each chunk. Same API surfaces, no RTSP tunnel needed.
 
 **Why scene-grounded narration:** Earlier builds hallucinated function names and errors the developer never mentioned. The narration prompt now receives the per-clip scene index slice (label, files, errors, summary) with explicit anti-hallucination rules.
-
----
-
-## Repo layout
-
-```
-trace_cli/
-  cli.py                  all commands (start, stop, generate, serve, qa-poll, + inspection)
-  capture/                Linux (wf-recorder+ffmpeg), macOS/Windows (VideoDB SDK), live indexer
-  indexing/pipeline.py    mux audio → upload → index_spoken_words + index_scenes
-  timeline/               4 classifiers → gap-free tagged timeline
-  pr_video/               clip selector, narration builder, 3-track renderer, ship logic
-  focus_mode/             reviewer focus ranking
-  contribution_map/       Claude Code log scanner + diff line classifier
-  pr_description/         What/Why/Struggles/Follow-ups generator
-  web/                    FastAPI server + /trace Q&A poll loop
-  session/                metadata models, on-disk store, lifecycle manager
-  videodb/client.py       single VideoDB facade
-  github/client.py        PR comment, diff, description ops
-landing/                  static landing page
-tests/                    unit / property / integration
-```
 
 ---
 

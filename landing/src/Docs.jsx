@@ -1,7 +1,7 @@
 function Docs() {
   const tree = [
     ["dir", "trace_cli/", ""],
-    ["file", "  cli.py", "typer entry (start, stop, generate, serve, qa-poll, focus, contribution-map, pr-description)"],
+    ["file", "  cli.py", "all commands: start, stop, generate, serve, qa-poll, sessions, inspect, timeline, transcript, focus, contribution-map, pr-description"],
     ["file", "  credentials.py", "env var loading + key redaction"],
     ["file", "  videodb/client.py", "single VideoDB facade"],
     ["file", "  github/client.py", "PR URL validator + comment / diff / description ops"],
@@ -11,9 +11,12 @@ function Docs() {
     ["file", "    manager.py", "start / stop lifecycle, active-session lock"],
     ["file", "    ids.py", "UUID v4 helpers"],
     ["dir",  "  capture/", ""],
-    ["file", "    service.py", "wf-recorder + ffmpeg pulse subprocesses"],
+    ["file", "    platform.py", "OS dispatch: imports correct service + watchers for current platform"],
+    ["file", "    service.py", "Linux: wf-recorder + ffmpeg/pulse subprocesses"],
+    ["file", "    service_mac.py", "macOS: VideoDB CaptureClient SDK + osascript window tracking"],
+    ["file", "    service_windows.py", "Windows: VideoDB CaptureClient SDK + win32gui window tracking"],
     ["file", "    heartbeat.py", "5s heartbeat writer"],
-    ["file", "    watchers.py", "inotify file save watcher + hyprctl window poller"],
+    ["file", "    watchers.py", "inotify file save watcher + hyprctl window poller (Linux)"],
     ["file", "    live_indexer.py", "15s chunk upload + index thread (--live mode)"],
     ["dir",  "  indexing/", ""],
     ["file", "    pipeline.py", "mux audio + upload + spoken/scene index + transcript fetch"],
@@ -22,11 +25,12 @@ function Docs() {
     ["file", "    classifiers/__init__.py", "progress / speech / research / stuck"],
     ["file", "    build_for_session.py", "glue: load session data, run classifiers, persist"],
     ["dir",  "  pr_video/", ""],
-    ["file", "    selector.py", "per-moment clip selection (ranked, paged transcript summary)"],
-    ["file", "    narration.py", "batched, scene + transcript grounded"],
-    ["file", "    render.py", "editor.Timeline with 3 tracks: video / audio / badges"],
+    ["file", "    selector.py", "per-moment clip selection (ranked, 30–90s budget)"],
+    ["file", "    narration.py", "batched generate_text grounded in scene + transcript"],
+    ["file", "    render.py", "editor.Timeline with 3 tracks: video / narration / music; FLUX intro; badges"],
     ["file", "    generator.py", "end-to-end orchestration (clips + narration + render + all PR posts)"],
-    ["file", "    ship.py", "auto-commit + push + open PR logic (internal — invoked by generate when pr_url omitted)"],
+    ["file", "    ship.py", "auto-commit + push + open PR (internal, invoked by generate when pr_url omitted)"],
+    ["file", "    preview.py", "thumbnail capture + local preview helpers"],
     ["dir",  "  focus_mode/", ""],
     ["file", "    builder.py", "reviewer Focus Mode ranking"],
     ["dir",  "  contribution_map/", ""],
@@ -35,8 +39,15 @@ function Docs() {
     ["dir",  "  pr_description/", ""],
     ["file", "    generator.py", "What / Why / Struggles / Follow-ups"],
     ["dir",  "  web/", ""],
-    ["file", "    app.py", "FastAPI web server + landing mount"],
-    ["file", "    qa.py", "/trace polling bot — LLM answer + up to 3 clip URLs per question"],
+    ["file", "    app.py", "FastAPI server: GET / (landing), GET /docs, GET /api/sessions"],
+    ["file", "    qa.py", "/trace polling bot — dual semantic search + LLM answer + up to 3 clip URLs"],
+    ["dir",  "  decision_replay/", ""],
+    ["file", "    service.py", "file+line range → session clip intervals"],
+    ["file", "  anthropic_client/", "Anthropic Claude SDK wrapper"],
+    ["file", "  openai_clients/", "Whisper + TTS wrappers"],
+    ["file", "  utils/retry.py", "shared retry + backoff helpers"],
+    ["dir", "landing/", "static landing page (Vercel)"],
+    ["dir", "tests/", "unit / property / integration"],
   ];
 
   const env = [
@@ -176,16 +187,20 @@ function Docs() {
                 <div id="pipeline" className="docs-block">
                   <h3 className="docs-h2">Pipeline</h3>
                   <p>The capture-to-PR flow, in order:</p>
-                  <pre>{`1. capture/service.py        wf-recorder + ffmpeg/pulse subprocesses
-2. capture/live_indexer.py   15s chunks → Collection.upload (when --live)
-3. capture/watchers.py       inotify saves + hyprctl active window samples
-4. indexing/pipeline.py      mux audio · upload · index_spoken_words · index_scenes (sandbox VLM)
-5. timeline/builder.py       merge classifier boundaries · resolve priority
-6. pr_video/selector.py      pick clips per diff file (tiered: research > AI speech > progress)
-7. pr_video/narration.py     batched generate_text grounded in scene + transcript
-8. pr_video/render.py        FLUX intro · voice-clone TTS · ambient music · editor.Timeline
-9. pr_description/generator  What / Why / Struggles / Follow-ups / Test plan
-10. github/client.py         post HLS + description + contribution map + focus mode to PR`}</pre>
+                  <pre>{` 1. capture/platform.py       dispatch to correct capture backend for current OS
+ 2. capture/service*.py       wf-recorder + ffmpeg/pulse (Linux) · VideoDB CaptureClient SDK (macOS/Windows)
+ 3. capture/live_indexer.py   15s chunks → Collection.upload + index (when --live)
+ 4. capture/watchers.py       inotify saves + hyprctl active window samples
+ 5. indexing/pipeline.py      mux audio · upload · index_spoken_words · index_scenes (sandbox VLM)
+ 6. timeline/builder.py       merge classifier boundaries · resolve priority
+ 7. pr_video/selector.py      pick clips per diff file (tiered: research > speech > progress)
+ 8. pr_video/narration.py     batched generate_text grounded in scene + transcript
+ 9. pr_video/render.py        FLUX intro · voice-clone TTS · ambient music · editor.Timeline
+10. pr_description/generator  What / Why / Struggles / Follow-ups
+11. contribution_map/         scan Claude Code logs · classify diff lines human/agent/mixed/unknown
+12. focus_mode/builder.py     rank files by stuck moments + change size → reviewer guide
+13. github/client.py          post HLS + description + contribution map + focus mode to PR
+14. web/qa.py                 qa-poll loop: /trace comment → dual search → LLM answer + clip URLs`}</pre>
                 </div>
 
                 <div id="platforms" className="docs-block">
