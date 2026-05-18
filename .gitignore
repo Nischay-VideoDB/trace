@@ -20,6 +20,8 @@ wheels/
 # editors
 .vscode/
 .idea/
+.kiro/
+.agents/
 
 # OS
 .DS_Store
