@@ -14,6 +14,18 @@
 
 **Demo Repo:** [trace-test](https://github.com/crypticsaiyan/trace-test)
 
+## What it is
+
+trace gives your pull requests a memory. Run `trace start` before you code and `trace stop` when you're done. That's it — everything else is automatic.
+
+During the session, trace captures your screen and mic, streaming 15-second chunks to VideoDB in real time. On stop, it muxes the audio, uploads the full session, and runs `index_spoken_words` + `index_scenes` with a custom classifier prompt to build a tagged timeline of progress, stuck, research, and speech moments.
+
+When you open a PR, `trace generate` selects the most relevant clips from that timeline, generates a narration script grounded in the scene index and spoken transcript, synthesizes voice via OmniVoice, adds a FLUX-generated intro card and ambient music, and assembles everything on a `videodb.editor.Timeline` with three composed tracks. The resulting HLS stream URL is posted directly to the PR.
+
+The session stays queryable. Reviewers comment `/trace <question>` and get a text answer plus up to three bounded clip URLs, powered by dual semantic search across the spoken-word and scene indexes.
+
+VideoDB is the only vendor: capture, indexing, search, `generate_text`, `generate_voice`, `generate_image`, `generate_music`, and `editor.Timeline` — 15 distinct API surfaces across 8 files.
+
 ## How it works
 
 ```
