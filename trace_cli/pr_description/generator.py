@@ -255,7 +255,10 @@ def build(
         test_prompt = (
             "Summarize these raw developer notes into a clean PR test plan. "
             "Write 2-4 bullet points describing what was tested or verified. "
-            "Imperative mood, clean English, no raw quotes, no filler words.\n\n"
+            "Imperative mood, clean English, no raw quotes, no filler words. "
+            "IMPORTANT: Do not mention any filenames or modules that are not in this list of actual changed files: "
+            + ", ".join(b.strip("- ").split(" ")[0] for b in bullets)
+            + ".\n\nDeveloper notes:\n"
             + "\n".join(f"- {t}" for t in test_mentions)
             + "\n\nOutput only the bullet list, one per line, starting with -"
         )
@@ -281,10 +284,10 @@ def _append_video_block(sections: list[str], video_url: str | None, thumb_url: s
         sections.append(
             f"## trace walkthrough\n\n"
             f"[![narrated session walkthrough]({thumb_url})]({video_url})\n\n"
-            f"_Click to play the narrated walkthrough._"
+            f"_Click to play — or open directly: {video_url}_"
         )
     else:
-        sections.append(f"## trace walkthrough\n\n[Watch narrated walkthrough]({video_url})")
+        sections.append(f"## trace walkthrough\n\n{video_url}")
 
 
 def _append_footer(sections: list[str], contribution_url: str | None) -> None:
