@@ -176,24 +176,108 @@ uv run trace pr-description <session_id> --pr https://github.com/you/repo/pull/N
 ## Architecture
 
 ```
-trace start                trace stop              trace generate
-     │                          │                        │
-     ▼                          ▼                        ▼
-CaptureService          IndexingPipeline          PRVideoGenerator
-wf-recorder +           upload mp4 →              ClipSelector (30–90s)
-ffmpeg pulse            VideoDB                   NarrationBuilder
-     │                  index_spoken_words        Renderer (3 tracks)
-     │                  index_scenes                   │
-     ▼                  TimelineBuilder                ▼
-LiveIndexer (--live)    4 classifiers             editor.Timeline
-15s chunks →            progress/stuck/           VideoAsset + AudioAsset
-VideoDB upload          research/speech           + ImageAsset (FLUX)
-                             │                         │
-                             ▼                         ▼
-                        ~/.trace/sessions/        PR comment (HLS URL)
-                        metadata.json             PR description
-                        timeline.json             contribution map
-                        transcript.json           focus mode comment
+╔══════════════════════════════════════════════════════════════════════════════════╗
+║                              PHASE 1 · trace start                               ║
+╠══════════════════════════════════════════════════════════════════════════════════╣
+║                                                                                  ║
+║   Developer machine                         VideoDB (--live only)                ║
+║   ─────────────────                         ──────────────────────               ║
+║   screen ──► wf-recorder ──► screen.mp4     every 15s:                          ║
+║   mic    ──► ffmpeg/pulse ──► audio.wav       chunk.mp4 ──► Collection.upload   ║
+║                  │                                      ──► index_scenes         ║
+║                  ▼                                      ──► index_spoken_words   ║
+║           LiveIndexer thread  ────────────────────────────────────────────────►  ║
+║                                                                                  ║
+║   SaveWatcher  (inotify)  ──► events_saves.jsonl                                ║
+║   WindowPoller (hyprctl)  ──► events_windows.jsonl                              ║
+║   HeartbeatThread         ──► heartbeat.json (5s)                               ║
+║                                                                                  ║
+╠══════════════════════════════════════════════════════════════════════════════════╣
+║                              PHASE 2 · trace stop                                ║
+╠══════════════════════════════════════════════════════════════════════════════════╣
+║                                                                                  ║
+║   mux screen.mp4 + audio.wav ──► session.mp4                                    ║
+║          │                                                                       ║
+║          ▼                                                                       ║
+║   Collection.upload(session.mp4) ──► Video                                      ║
+║          │                                                                       ║
+║          ├──► Video.index_spoken_words ──► transcript.json                      ║
+║          │         (SegmentationType.sentence)                                   ║
+║          │                                                                       ║
+║          └──► Video.index_scenes ──────► scene_index_id                         ║
+║                   (time_based, custom JSON classifier prompt)                    ║
+║                          │                                                       ║
+║                          ▼                                                       ║
+║               TimelineBuilder                                                    ║
+║               ├── progress classifier  (file saves in diff)                     ║
+║               ├── stuck classifier    (long gaps, error scenes)                 ║
+║               ├── research classifier (browser visible)                          ║
+║               └── speech classifier   (transcript density)                      ║
+║                          │                                                       ║
+║                          ▼                                                       ║
+║               timeline.json  (gap-free tagged moments)                          ║
+║                                                                                  ║
+╠══════════════════════════════════════════════════════════════════════════════════╣
+║                           PHASE 3 · trace generate                               ║
+╠══════════════════════════════════════════════════════════════════════════════════╣
+║                                                                                  ║
+║   GitHub PR diff                                                                 ║
+║          │                                                                       ║
+║          ▼                                                                       ║
+║   ClipSelector  ──► ranked clips (progress moments matching diff files)         ║
+║          │                                                                       ║
+║          ├──► Video.get_scene_index  ──► per-clip scene context                 ║
+║          │                                                                       ║
+║          ├──► Collection.generate_text (model=pro)                              ║
+║          │         grounded in scene + transcript  ──► per-clip narration       ║
+║          │                                                                       ║
+║          └──► editor.Timeline assembly                                           ║
+║                   ├── VideoTrack:  VideoAsset (source clips, muted)             ║
+║                   ├── AudioTrack: AudioAsset (OmniVoice TTS, voice-cloned)      ║
+║                   │               AudioAsset (ambient music)                    ║
+║                   │     Collection.generate_voice  ──► per-clip WAV (x4 parallel)║
+║                   │     Collection.generate_music  ──► background track         ║
+║                   ├── ImageTrack: ImageAsset (FLUX intro card, 16:9)            ║
+║                   │     Collection.generate_image  ──► title card               ║
+║                   └── BadgeTrack: TextAsset (category + filename overlays)      ║
+║                          │                                                       ║
+║                          ▼                                                       ║
+║               Timeline.generate_stream() ──► HLS m3u8 URL                      ║
+║                          │                                                       ║
+║                          ▼                                                       ║
+║   GitHub PR comment  ◄── HLS URL + PR description + contribution map            ║
+║                              + focus mode comment                                ║
+║                                                                                  ║
+╠══════════════════════════════════════════════════════════════════════════════════╣
+║                         PHASE 4 · trace qa-poll (live)                          ║
+╠══════════════════════════════════════════════════════════════════════════════════╣
+║                                                                                  ║
+║   reviewer comments "/trace <question>"                                          ║
+║          │                                                                       ║
+║          ├──► Video.search(spoken_word, semantic) ──► top hits                  ║
+║          ├──► Video.search(scene,       semantic) ──► top hits                  ║
+║          │         dedupe + rank by score                                        ║
+║          ├──► Collection.generate_text ──► synthesized answer                   ║
+║          └──► Video.generate_stream(timeline=[(s,e)]) ──► up to 3 clip URLs    ║
+║                          │                                                       ║
+║                          ▼                                                       ║
+║   GitHub PR reply  ◄── answer + bounded clip URLs                               ║
+║                                                                                  ║
+╠══════════════════════════════════════════════════════════════════════════════════╣
+║                           LOCAL SESSION STORE                                    ║
+╠══════════════════════════════════════════════════════════════════════════════════╣
+║                                                                                  ║
+║   ~/.trace/sessions/<session_id>/                                                ║
+║       metadata.json        status, video_id, started_at, project_dir            ║
+║       screen.mp4           raw screen capture                                    ║
+║       audio.wav            raw mic capture                                       ║
+║       transcript.json      spoken-word segments with timestamps                  ║
+║       timeline.json        tagged moments (progress/stuck/research/speech)       ║
+║       events_saves.jsonl   file save events (path, timestamp)                   ║
+║       events_windows.jsonl active window samples                                 ║
+║       qa_replied.json      comment ids already answered                          ║
+║                                                                                  ║
+╚══════════════════════════════════════════════════════════════════════════════════╝
 ```
 
 **Why chunked live upload instead of CaptureSession:** VideoDB's Capture SDK has no Linux wheel. On Linux Wayland, trace runs a `LiveIndexer` thread that cuts the in-progress mp4 every 15s, uploads via `Collection.upload`, and indexes each chunk. Same API surfaces, no RTSP tunnel needed.
