@@ -162,7 +162,7 @@ function Install() {
         <div className="section-head">
           <div>
             <span className="section-tag">Install</span>
-            <h2 className="section-title">Sixty seconds to a narrated PR.</h2>
+            <h2 className="section-title">Record. Stop. Ship.</h2>
           </div>
           <p className="section-sub">
             Arch + Hyprland is the verified path. macOS and Windows are also supported via the official VideoDB Capture SDK.
