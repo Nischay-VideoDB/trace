@@ -175,8 +175,9 @@ def render_comment(contributions: list[FileContribution]) -> str:
         )
     lines.append("")
     lines.append(
-        "_agent_ = file saved while AI assistant on screen or invoked by voice. "
-        "_human_ = file saved during session, no AI signal. "
-        "_unknown_ = file not written during capture window (added outside session or by CI)."
+        "_agent_ = saved while AI assistant active on screen or invoked by voice. "
+        "_human_ = saved during session with no AI signal detected. "
+        "_mixed_ = saved in both human and AI windows. "
+        "_unknown_ = not observed during capture (added outside session, by CI, or by AI without a save event)."
     )
     return "\n".join(lines)

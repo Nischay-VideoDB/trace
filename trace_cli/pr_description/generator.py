@@ -219,22 +219,51 @@ def build(
     sections.append("## Why\n\n" + why)
 
     if stuck_bits:
-        sections.append("## Struggles\n\n" + "\n".join(f"- {s}" for s in stuck_bits[:4]))
+        stuck_prompt = (
+            "Rewrite these raw session notes as clean, concise bullet points (max 10 words each). "
+            "Fix grammar. Remove filler words. Keep technical meaning exact.\n\n"
+            + "\n".join(f"- {s}" for s in stuck_bits[:4])
+            + "\n\nOutput only the bullet list, one per line, starting with -"
+        )
+        try:
+            stuck_clean = client.generate_text(prompt=stuck_prompt, model="basic").strip()
+        except Exception:  # noqa: BLE001
+            stuck_clean = "\n".join(f"- {s}" for s in stuck_bits[:4])
+        sections.append("## Struggles\n\n" + stuck_clean)
 
     if followups:
-        sections.append("## Follow-ups\n\n" + "\n".join(f"- {q}" for q in followups))
+        followup_prompt = (
+            "Extract actionable TODO items from these raw developer notes. "
+            "Rewrite as clean imperative bullet points (max 12 words each). "
+            "Omit filler, fix grammar, keep intent.\n\n"
+            + "\n".join(f"- {q}" for q in followups)
+            + "\n\nOutput only the bullet list, one per line, starting with -"
+        )
+        try:
+            followup_clean = client.generate_text(prompt=followup_prompt, model="basic").strip()
+        except Exception:  # noqa: BLE001
+            followup_clean = "\n".join(f"- {q}" for q in followups)
+        sections.append("## Follow-ups\n\n" + followup_clean)
 
-    # Test plan: infer from transcript + timeline.
+    # Test plan: summarize from transcript test mentions.
     test_mentions = [
         seg.text.strip()
         for seg in transcript.segments
         if re.search(r"\b(test|pytest|assert|check|verify|pass|fail)\b", seg.text or "", re.IGNORECASE)
-    ][:4]
+    ][:6]
     if test_mentions:
-        sections.append(
-            "## Test plan\n\n"
-            + "\n".join(f"- {t[:120]}" for t in test_mentions)
+        test_prompt = (
+            "Summarize these raw developer notes into a clean PR test plan. "
+            "Write 2-4 bullet points describing what was tested or verified. "
+            "Imperative mood, clean English, no raw quotes, no filler words.\n\n"
+            + "\n".join(f"- {t}" for t in test_mentions)
+            + "\n\nOutput only the bullet list, one per line, starting with -"
         )
+        try:
+            test_clean = client.generate_text(prompt=test_prompt, model="basic").strip()
+        except Exception:  # noqa: BLE001
+            test_clean = "\n".join(f"- {t[:80]}" for t in test_mentions[:3])
+        sections.append("## Test plan\n\n" + test_clean)
 
     _append_footer(sections, contribution_url)
 
