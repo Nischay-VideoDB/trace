@@ -10,13 +10,13 @@
 
 ![trace CLI](assets/cli.png)
 
-**trace** gives your pull requests a memory. It watches your screen and mic while you code, indexes everything through VideoDB, and when you open a PR it posts a narrated walkthrough video, a context-aware description, a reviewer Q&A bot, and a human vs AI contribution map — all from one session recording.
+**trace** gives your pull requests a memory. It watches your screen and mic while you code, indexes everything through VideoDB, and when you open a PR it posts a narrated walkthrough video, a context-aware description, a reviewer Q&A bot, and a human vs AI contribution map - all from one session recording.
 
 **Demo Repo:** [trace-test](https://github.com/crypticsaiyan/trace-test)
 
 ## What it is
 
-trace gives your pull requests a memory. Run `trace start` before you code and `trace stop` when you're done. That's it — everything else is automatic.
+trace gives your pull requests a memory. Run `trace start` before you code and `trace stop` when you're done. That's it - everything else is automatic.
 
 During the session, trace captures your screen and mic, streaming 15-second chunks to VideoDB in real time. On stop, it muxes the audio, uploads the full session, and runs `index_spoken_words` + `index_scenes` with a custom classifier prompt to build a tagged timeline of progress, stuck, research, and speech moments.
 
@@ -24,7 +24,7 @@ When you open a PR, `trace generate` selects the most relevant clips from that t
 
 The session stays queryable. Reviewers comment `/trace <question>` and get a text answer plus up to three bounded clip URLs, powered by dual semantic search across the spoken-word and scene indexes.
 
-VideoDB is the only vendor: capture, indexing, search, `generate_text`, `generate_voice`, `generate_image`, `generate_music`, and `editor.Timeline` — 15 distinct API surfaces across 8 files.
+VideoDB is the only vendor: capture, indexing, search, `generate_text`, `generate_voice`, `generate_image`, `generate_music`, and `editor.Timeline` - 15 distinct API surfaces across 8 files.
 
 ## How it works
 
@@ -47,15 +47,15 @@ Additional commands: `trace sessions`, `trace inspect`, `trace timeline`, `trace
 
 ## Features
 
-**Narrated PR video** — Clips are selected from `progress` moments whose files appear in the diff. Narration is grounded in the scene index and spoken transcript (no hallucination). Three-track `editor.Timeline`: video / OmniVoice narration / ambient music. FLUX-generated intro title card. Posted to the PR as an HLS stream URL.
+**Narrated PR video** - Clips are selected from `progress` moments whose files appear in the diff. Narration is grounded in the scene index and spoken transcript (no hallucination). Three-track `editor.Timeline`: video / OmniVoice narration / ambient music. FLUX-generated intro title card. Posted to the PR as an HLS stream URL.
 
-**Reviewer Q&A (`/trace`)** — Any reviewer can comment `/trace why did you remove the cache?`. trace runs semantic search across both the spoken-word and scene indexes and replies with a synthesized answer + up to 3 timestamped clip URLs.
+**Reviewer Q&A (`/trace`)** - Any reviewer can comment `/trace why did you remove the cache?`. trace runs semantic search across both the spoken-word and scene indexes and replies with a synthesized answer + up to 3 timestamped clip URLs.
 
-**Human vs Agent contribution map** — Scans Claude Code session logs within the capture window, classifies each PR diff line as `human`, `agent`, `mixed`, or `unknown`, posts a per-file summary.
+**Human vs Agent contribution map** - Scans Claude Code session logs within the capture window, classifies each PR diff line as `human`, `agent`, `mixed`, or `unknown`, posts a per-file summary.
 
-**Reviewer Focus Mode** — Ranks files by `stuck` moments and change size, posts a prioritized review guide.
+**Reviewer Focus Mode** - Ranks files by `stuck` moments and change size, posts a prioritized review guide.
 
-**Context-aware PR description** — Generates What / Why / Struggles / Follow-ups from the transcript and timeline, appended to the PR description.
+**Context-aware PR description** - Generates What / Why / Struggles / Follow-ups from the transcript and timeline, appended to the PR description.
 
 ---
 
@@ -115,10 +115,10 @@ uv run trace generate <session_id>
 # 3b. Or against an existing PR:
 uv run trace generate <session_id> https://github.com/you/repo/pull/N
 
-# 4. Reviewer Q&A bot — polls PR for /trace mentions, replies with clip URLs.
+# 4. Reviewer Q&A bot - polls PR for /trace mentions, replies with clip URLs.
 uv run trace qa-poll https://github.com/you/repo/pull/N <session_id>
 
-# 5. Web server — landing page + /api/sessions.
+# 5. Web server - landing page + /api/sessions.
 uv run trace serve
 
 # --- Inspection ---
