@@ -9,7 +9,6 @@ function App() {
         <PRWalkthrough />
         <Features />
         <Install />
-        <APIMap />
         <Footer />
       </div>
     </>

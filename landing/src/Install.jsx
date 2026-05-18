@@ -1,3 +1,139 @@
+function QuickstartTerminal() {
+  const steps = [
+    {
+      head: "01 · clone + start",
+      lines: [
+        { p: "$", c: "git clone https://github.com/crypticsaiyan/trace && cd trace" },
+        { o: "Cloning into 'trace'... done." },
+        { p: "$", c: "uv sync" },
+        { o: "Resolved 24 packages in 1.2s · installed in 0.8s" },
+        { p: "$", c: "cp .env.example .env  # add your VIDEODB_API_KEY + GITHUB_TOKEN" },
+        { p: "$", c: "uv run trace start --project ~/code/my-repo --live" },
+        { o: "session_id: 7a2f-e831" },
+        { o: "session_dir: ~/.trace/sessions/7a2f-e831/" },
+        { o: "live indexer: chunk every 15s → VideoDB" },
+        { o: "watchers: inotify saves + hyprctl window poll" },
+        { ok: "recording. talk out loud while you code." },
+      ],
+    },
+    {
+      head: "02 · stop + index",
+      lines: [
+        { p: "$", c: "uv run trace stop" },
+        { o: "stop signal sent to session 7a2f-e831" },
+        { o: "muxing audio · 03:12.4" },
+        { o: "Collection.upload(session.mp4) → vid_9kXp..." },
+        { o: "index_spoken_words(sentence) · 412 segments" },
+        { o: "index_scenes(time_based, prompt=...) · 78 scenes" },
+        { o: "timeline: stuck=4 progress=12 speech=7 research=3" },
+        { ok: "indexed. run: trace generate 7a2f-e831 <pr_url>" },
+      ],
+    },
+    {
+      head: "03 · generate PR video",
+      lines: [
+        { p: "$", c: "uv run trace generate 7a2f-e831 https://github.com/you/repo/pull/12" },
+        { o: "fetching PR diff · 6 files +312 −47" },
+        { o: "selector: 9 clips matching auth.py, jwt.py, tests/" },
+        { o: "generate_image(FLUX): intro title card 16:9" },
+        { o: "generate_text(pro): scene-grounded narration × 9" },
+        { o: "generate_voice(OmniVoice): ref + 9 cloned clips parallel" },
+        { o: "generate_music: ambient background 120s" },
+        { o: "editor.Timeline: intro · video · narration · badges · music" },
+        { ok: "PR #12 commented · description appended · contrib map posted" },
+      ],
+    },
+    {
+      head: "04 · auto-ship (no PR yet)",
+      lines: [
+        { p: "$", c: "uv run trace generate 7a2f-e831" },
+        { o: "auto-committing 4 changed files..." },
+        { o: "pushing branch trace/session-7a2f-e831" },
+        { o: "opening PR: feat(auth): jwt validation + scene narration" },
+        { o: "running full generate pipeline..." },
+        { ok: "PR #13 · video posted · description appended" },
+      ],
+    },
+    {
+      head: "05 · reviewer Q&A bot",
+      lines: [
+        { p: "$", c: "uv run trace qa-poll https://github.com/you/repo/pull/12 7a2f-e831" },
+        { o: "polling every 30s for /trace mentions..." },
+        { o: "comment #4824: /trace why did you drop pyjwt?" },
+        { o: "Video.search(spoken_word, semantic) → 2 hits" },
+        { o: "Video.search(scene, semantic) → 1 hit" },
+        { o: "generating 2 bounded clip URLs..." },
+        { ok: "replied with 2 clips + paraphrase" },
+      ],
+    },
+  ];
+
+  const [idx, setIdx] = React.useState(0);
+  const [line, setLine] = React.useState(0);
+  const [char, setChar] = React.useState(0);
+
+  React.useEffect(() => {
+    const s = steps[idx];
+    if (line >= s.lines.length) {
+      const t = setTimeout(() => {
+        setIdx((idx + 1) % steps.length);
+        setLine(0);
+        setChar(0);
+      }, 2200);
+      return () => clearTimeout(t);
+    }
+    const cur = s.lines[line];
+    const txt = cur.c || cur.o || cur.ok || "";
+    if (char < txt.length) {
+      const speed = cur.c ? 22 : 6;
+      const t = setTimeout(() => setChar(char + 1), speed);
+      return () => clearTimeout(t);
+    }
+    const t = setTimeout(() => { setLine(line + 1); setChar(0); }, cur.c ? 180 : 60);
+    return () => clearTimeout(t);
+  }, [idx, line, char]);
+
+  const s = steps[idx];
+  return (
+    <div className="term" style={{ marginTop: 32 }}>
+      <div className="term-head">
+        <div className="term-dots"><i /><i /><i /></div>
+        <span>~/your-repo · {s.head}</span>
+        <div style={{ display: "flex", gap: 8 }}>
+          {steps.map((st, i) => (
+            <span
+              key={i}
+              onClick={() => { setIdx(i); setLine(0); setChar(0); }}
+              style={{
+                width: 6, height: 6, borderRadius: "50%", cursor: "pointer",
+                background: i === idx ? "var(--accent)" : "var(--line-strong)",
+                display: "inline-block",
+              }}
+            />
+          ))}
+        </div>
+      </div>
+      <div className="term-body" style={{ minHeight: 200 }}>
+        {s.lines.slice(0, line).map((l, i) => (
+          <div key={i} className="line">
+            {l.c && <><span className="prompt">$</span> <span className="cmd">{l.c}</span></>}
+            {l.o && <span className="dim">{l.o}</span>}
+            {l.ok && <span className="green">✓ {l.ok}</span>}
+          </div>
+        ))}
+        {line < s.lines.length && (
+          <div className="line">
+            {s.lines[line].c && <><span className="prompt">$</span> <span className="cmd">{s.lines[line].c.slice(0, char)}</span></>}
+            {s.lines[line].o && <span className="dim">{s.lines[line].o.slice(0, char)}</span>}
+            {s.lines[line].ok && <span className="green">✓ {s.lines[line].ok.slice(0, char)}</span>}
+            <span className="caret" />
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function Install() {
   const steps = [
     {
@@ -14,33 +150,11 @@ function Install() {
     },
     {
       n: "03",
-      h: "System deps (Arch + Hyprland verified)",
-      code: "sudo pacman -S --needed \\\n  ffmpeg wf-recorder inotify-tools",
-      note: "wf-recorder is Wayland-only. X11 hosts can swap in ffmpeg -f x11grab. Mic capture uses PulseAudio or pipewire-pulse compat shim.",
+      h: "System deps",
+      code: "# Arch Linux + Hyprland\nsudo pacman -S --needed \\\n  ffmpeg wf-recorder inotify-tools\n\n# macOS (uses VideoDB Capture SDK)\nuv sync --extra macos\n\n# Windows (uses VideoDB Capture SDK)\nuv sync --extra windows",
+      note: "Linux: wf-recorder is Wayland-only. macOS + Windows: the official VideoDB Capture SDK handles screen + mic natively.",
     },
   ];
-
-  const quick = [
-    "mkdir -p /tmp/demo && cd /tmp/demo",
-    "git init && echo 'def hello(): pass' > greet.py",
-    "",
-    "# terminal 1 — start recording",
-    "uv run trace start --project /tmp/demo --live",
-    "",
-    "# code in another window, talk out loud while editing, save with :w",
-    "",
-    "# terminal 2 — stop + index",
-    "uv run trace stop",
-    "",
-    "# generate narrated PR video (push + open PR first)",
-    "uv run trace generate <session_id> https://github.com/you/repo/pull/N",
-    "",
-    "# OR: auto-commit + push + open PR + generate in one shot",
-    "uv run trace ship <session_id>",
-    "",
-    "# run the @trace reviewer bot (long-running)",
-    "uv run trace qa-poll https://github.com/you/repo/pull/N <session_id>",
-  ].join("\n");
 
   return (
     <section id="install" className="section">
@@ -51,7 +165,7 @@ function Install() {
             <h2 className="section-title">Sixty seconds to a narrated PR.</h2>
           </div>
           <p className="section-sub">
-            Arch + Hyprland is the verified path. Linux Wayland in general should work — the Capture SDK doesn't ship a Linux wheel, so trace uses chunked uploads under the hood instead.
+            Arch + Hyprland is the verified path. macOS and Windows are also supported via the official VideoDB Capture SDK.
           </p>
         </div>
 
@@ -66,77 +180,20 @@ function Install() {
           ))}
         </div>
 
-        <div style={{ marginTop: 32 }} className="card pr-side-card crosshair">
-          <div className="pr-side-h">▸ Quickstart</div>
-          <pre className="pr-diff" style={{ whiteSpace: "pre" }}>{quick}</pre>
-        </div>
+        <QuickstartTerminal />
       </div>
     </section>
   );
 }
-
-function APIMap() {
-  const rows = [
-    ["videodb.connect", "videodb/client.py", "Auth"],
-    ["Collection.upload", "indexing/pipeline.py + capture/live_indexer.py", "Session video + 15s live chunks"],
-    ["Collection.connect_rtstream", "videodb/client.py (helper)", "Live ingest path"],
-    ["Collection.generate_text", "pr_video/narration.py · pr_description/generator.py", "Narration + PR Why section"],
-    ["Collection.generate_voice", "pr_video/render.py", "Per-clip TTS narration"],
-    ["Video.index_spoken_words", "indexing/pipeline.py", "Transcript (sentence segmentation)"],
-    ["Video.index_scenes", "indexing/pipeline.py", "Visual classification (custom prompt)"],
-    ["Video.get_scene_index", "videodb/client.py", "Scene grounding for narration"],
-    ["Video.search (spoken_word)", "web/qa.py", "Reviewer Q&A search"],
-    ["Video.search (scene)", "web/qa.py", "Visual semantic search"],
-    ["Video.generate_stream", "web/qa.py", "Bounded HLS clip URLs"],
-    ["editor.Timeline + Track + Clip", "pr_video/render.py", "PR video assembly"],
-    ["editor.VideoAsset", "pr_video/render.py", "Source clips, muted, track z=0"],
-    ["editor.AudioAsset", "pr_video/render.py", "Narration, track z=1"],
-    ["editor.TextAsset", "pr_video/render.py", "Category + filename badges, track z=2"],
-  ];
-
-  return (
-    <section id="api" className="section">
-      <div className="wrap">
-        <div className="section-head">
-          <div>
-            <span className="section-tag">VideoDB usage map</span>
-            <h2 className="api-map-title">15 calls. 8 files. One vendor.</h2>
-          </div>
-          <p className="section-sub">
-            Every VideoDB API surface used, and where. Hackathon scorer weights 30% on depth of VideoDB usage — this is the receipt.
-          </p>
-        </div>
-
-        <div className="card api-map crosshair">
-          <table className="api-table">
-            <thead>
-              <tr><th>API</th><th>File</th><th>Purpose</th></tr>
-            </thead>
-            <tbody>
-              {rows.map((r, i) => (
-                <tr key={i}>
-                  <td className="api">{r[0]}</td>
-                  <td className="file">trace_cli/{r[1]}</td>
-                  <td className="purpose">{r[2]}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </div>
-    </section>
-  );
-}
-
 function Features() {
   const feats = [
     { n: "01", name: "Session capture", desc: "Screen + mic streamed to VideoDB as 15s chunks during the session, or muxed and uploaded on stop.", chip: "VideoDB · Collection.upload" },
     { n: "02", name: "Timeline builder", desc: "Four classifiers tag every second of the session: stuck, research, progress, speech.", chip: "trace_cli/timeline" },
-    { n: "03", name: "PR video", desc: "Narrated walkthrough assembled on editor.Timeline with three tracks. Posted as HLS to the PR.", chip: "editor.Timeline · generate_stream" },
-    { n: "04", name: "Reviewer Q&A", desc: "@trace in a PR comment → semantic search across spoken_word + scene indexes, up to 3 clip URLs.", chip: "Video.search (semantic)" },
-    { n: "05", name: "Human vs Agent map", desc: "Scan Claude Code session logs in the capture window. Classify diff lines as human, agent, mixed, or unknown.", chip: "trace_cli/contribution_map" },
+    { n: "03", name: "PR video", desc: "FLUX intro card, voice-cloned narration per clip (OmniVoice), ambient music, fade transitions. Assembled on editor.Timeline with 4 tracks. Posted as HLS to the PR.", chip: "editor.Timeline · generate_stream" },
+    { n: "04", name: "Reviewer Q&A", desc: "/trace in a PR comment triggers semantic search across spoken_word + scene indexes. Replies with an LLM-synthesized answer and up to 3 bounded clip URLs.", chip: "Video.search (semantic)" },
+    { n: "05", name: "Human vs Agent map", desc: "Classifies each PR diff file as human, agent, mixed, or unknown using session evidence: screen activity (ai_assistant scenes), voice transcript (AI invocation keywords), and file save timing.", chip: "trace_cli/contribution_map" },
     { n: "06", name: "Focus Mode", desc: "Compress a 20-file PR into a ranked list of files that drove the actual decisions, with rationale.", chip: "trace_cli/focus_mode" },
-    { n: "07", name: "PR Description", desc: "Auto-appended What / Why / Struggles / Follow-ups, grounded in the session not the diff.", chip: "trace_cli/pr_description" },
+    { n: "07", name: "PR Description", desc: "Auto-generated What / Why / Struggles / Follow-ups / Test plan. Fetches the repo's own PR template and fills it in if one exists. Grounded in session, not the diff.", chip: "trace_cli/pr_description" },
   ];
   return (
     <section id="features" className="section">
@@ -180,7 +237,7 @@ function Footer() {
           <div className="footer-col">
             <pre className="footer-brand-ascii">{ascii}</pre>
             <div className="dim" style={{ fontSize: 12, lineHeight: 1.65 }}>
-              Built for the VideoDB "Give Agents Eyes and Ears" hackathon, May 16–18 2026. MIT licensed.
+              Built for the VideoDB Hackathon.<br></br>MIT licensed.
             </div>
           </div>
           <div className="footer-col">
@@ -193,12 +250,11 @@ function Footer() {
           <div className="footer-col">
             <div className="footer-h">Surfaces</div>
             <a href="/docs">Docs</a>
-            <a href="#api">VideoDB map</a>
           </div>
           <div className="footer-col">
             <div className="footer-h">Stack</div>
             <a href="https://videodb.io" target="_blank" rel="noreferrer">VideoDB ↗</a>
-            <a href="https://github.com" target="_blank" rel="noreferrer">GitHub ↗</a>
+            <a href="https://github.com/crypticsaiyan/trace" target="_blank" rel="noreferrer">GitHub ↗</a>
             <a href="https://hackday.videodb.io/sandbox.html" target="_blank" rel="noreferrer">Sandbox ↗</a>
           </div>
         </div>
@@ -213,6 +269,5 @@ function Footer() {
 }
 
 window.Install = Install;
-window.APIMap = APIMap;
 window.Features = Features;
 window.Footer = Footer;

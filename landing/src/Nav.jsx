@@ -3,7 +3,6 @@ function Nav({ active }) {
     { href: "/#commands", label: "CLI" },
     { href: "/#walkthrough", label: "Walkthrough" },
     { href: "/#install", label: "Install" },
-    { href: "/#api", label: "VideoDB map" },
     { href: "/docs", label: "Docs" },
   ];
   return (
@@ -22,7 +21,7 @@ function Nav({ active }) {
               {it.label}
             </a>
           ))}
-          <a className="persist" href="https://github.com" target="_blank" rel="noreferrer">GitHub ↗</a>
+          <a className="persist" href="https://github.com/crypticsaiyan/trace" target="_blank" rel="noreferrer">GitHub ↗</a>
         </div>
         <span className="nav-rev">v0.1 · videodb hackathon</span>
       </div>

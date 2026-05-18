@@ -525,28 +525,3 @@ def pr_description(
         console.print(f"\n[green]appended to {pr_url}[/green]")
 
 
-@app.command()
-def ask(
-    session_id: str = typer.Argument(..., help="Session id"),
-    question: str = typer.Argument(..., help="Question to ask the session"),
-    top: int = typer.Option(3, "--top", help="Max hits"),
-) -> None:
-    """One-shot Q&A: search the session for a question and print clip URLs."""
-    Credentials.require("VIDEODB_API_KEY")
-    from trace_cli.session.store import SessionStore
-    from trace_cli.videodb.client import VideoDBClient
-    from trace_cli.web.qa import _dedupe_by_window, _scene_hits, _spoken_hits, build_reply
-
-    store = SessionStore()
-    meta = store.read_metadata(session_id)
-    client = VideoDBClient()
-    video = client.get_video(meta.video_id)
-    hits = _spoken_hits(client, video, question) + _scene_hits(client, video, question)
-    hits = _dedupe_by_window(hits)[:top]
-    urls: list[str] = []
-    for h in hits:
-        try:
-            urls.append(client.video_clip_url(video, h.start, h.end))
-        except Exception as e:  # noqa: BLE001
-            urls.append(f"(clip unavailable: {e})")
-    console.print(build_reply(question, hits, urls))

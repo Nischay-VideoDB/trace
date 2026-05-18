@@ -29,9 +29,11 @@ function HeroTerminal() {
         lines: [
           { p: "$", c: "uv run trace generate 7a2f https://github.com/you/repo/pull/12" },
           { o: "selector: 9 clips picked from diff (auth.py, jwt.py)" },
-          { o: "generate_text(pro): per-clip narration, scene-grounded" },
-          { o: "generate_voice: 9 TTS tracks parallel" },
-          { o: "editor.Timeline: video · narration · badges (z=0/1/2)" },
+          { o: "generate_image(FLUX): intro title card 16:9" },
+          { o: "generate_text(pro): scene-grounded narration × 9" },
+          { o: "generate_voice(OmniVoice): reference + 9 cloned clips" },
+          { o: "generate_music: ambient background 120s" },
+          { o: "editor.Timeline: intro · video · narration · badges · music" },
           { o: "Timeline.generate_stream() → HLS m3u8" },
           { ok: "posted to PR · description appended · contrib map up" },
         ],
@@ -109,30 +111,29 @@ function Hero() {
         <div className="hero-left">
           <div className="hero-eyebrow">
             <span className="dot" />
-            <span>VideoDB hackathon · May 16–18, 2026</span>
+            <span>powered by VideoDB</span>
           </div>
           <h1 className="hero-title">
-            code<span style={{color:"#fff"}}>,</span><br />
+            code<span style={{ color: "#fff" }}>,</span><br />
             <span className="acc">narrated</span><span className="acc">.</span>
           </h1>
           <p className="hero-sub">
-            record a coding session. get a PR that explains itself — narrated walkthrough video, reviewer Q&amp;A bot, focus mode, contribution map. one vendor, fifteen API calls.
+            record a coding session. get a PR that explains itself: narrated walkthrough video, /trace Q&amp;A bot, focus mode, contribution map. one vendor, fifteen API calls.
           </p>
           <div className="hero-ctas">
             <a className="btn primary" href="#install">Install →</a>
-            <a className="btn" href="#walkthrough">See a PR</a>
             <a className="btn" href="#features">Features</a>
           </div>
           <div className="hero-stats">
             <div>
               <div className="hero-stat-k">VideoDB calls</div>
-              <div className="hero-stat-v">15</div>
+              <div className="hero-stat-v">24</div>
               <div className="hero-stat-n">across 8 files</div>
             </div>
             <div>
               <div className="hero-stat-k">CLI commands</div>
-              <div className="hero-stat-v">9</div>
-              <div className="hero-stat-n">start · stop · generate · ship · serve · qa-poll · focus · contribution-map · ask</div>
+              <div className="hero-stat-v">7</div>
+              <div className="hero-stat-n">start · stop · generate · serve · qa-poll · focus · contribution-map</div>
             </div>
             <div>
               <div className="hero-stat-k">Vendors</div>
