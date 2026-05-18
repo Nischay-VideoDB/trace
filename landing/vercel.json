@@ -1,5 +1,6 @@
 {
   "rewrites": [
+    { "source": "/docs", "destination": "/docs.html" },
     { "source": "/static/(.*)", "destination": "/$1" }
   ]
 }
