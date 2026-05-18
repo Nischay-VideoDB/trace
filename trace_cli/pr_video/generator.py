@@ -148,6 +148,12 @@ def generate_pr_video(session_id: str, pr_url: str, *, dry_run: bool = False) ->
     # Append PR description (preview thumbnail + What/Why/Struggles/Follow-ups)
     try:
         from trace_cli.pr_description.generator import build as build_description
+        full_session_url = None
+        try:
+            full_video = client.get_video(meta.video_id)
+            full_session_url = full_video.generate_stream()
+        except Exception as e:  # noqa: BLE001
+            log.warning("full session stream URL failed: %s", e)
         desc = build_description(
             client, files, transcript, timeline,
             pr_title=f"PR #{pr.number}",
@@ -155,6 +161,7 @@ def generate_pr_video(session_id: str, pr_url: str, *, dry_run: bool = False) ->
             contribution_url=map_url,
             preview_thumb_url=preview_thumb_url,
             pr_ref=pr,
+            full_session_url=full_session_url,
         )
         gh.set_description(pr_url, desc.body)
         store.artifact_path(session_id, "pr_description.md").write_text(desc.body, encoding="utf-8")

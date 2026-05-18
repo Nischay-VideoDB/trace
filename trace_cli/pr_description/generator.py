@@ -127,6 +127,7 @@ def build(
     contribution_url: str | None = None,
     preview_thumb_url: str | None = None,
     pr_ref=None,
+    full_session_url: str | None = None,
     model: str = "pro",
 ) -> PRDescription:
     import os
@@ -167,9 +168,8 @@ def build(
             log.warning("template fill failed: %s", e)
             filled = ""
         if filled and len(filled) > 100:
-            # Prepend trace video block then the filled template.
             sections: list[str] = []
-            _append_video_block(sections, video_url, preview_thumb_url)
+            _append_video_block(sections, video_url, preview_thumb_url, full_session_url=full_session_url)
             sections.append(filled)
             _append_footer(sections, contribution_url)
             return PRDescription(
@@ -210,7 +210,7 @@ def build(
         summary = ""
 
     sections = []
-    _append_video_block(sections, video_url, preview_thumb_url)
+    _append_video_block(sections, video_url, preview_thumb_url, full_session_url=full_session_url)
 
     if summary:
         sections.append(f"> {summary}")
@@ -277,17 +277,25 @@ def build(
     )
 
 
-def _append_video_block(sections: list[str], video_url: str | None, thumb_url: str | None) -> None:
+def _append_video_block(
+    sections: list[str],
+    video_url: str | None,
+    thumb_url: str | None,
+    *,
+    full_session_url: str | None = None,
+) -> None:
     if not video_url:
         return
+    lines = ["## trace walkthrough", ""]
     if thumb_url:
-        sections.append(
-            f"## trace walkthrough\n\n"
-            f"[![narrated session walkthrough]({thumb_url})]({video_url})\n\n"
-            f"_Click to play — or open directly: {video_url}_"
-        )
+        lines.append(f"[![narrated session walkthrough]({thumb_url})]({video_url})")
+        lines.append("")
+        lines.append(f"**Narrated walkthrough:** {video_url}")
     else:
-        sections.append(f"## trace walkthrough\n\n{video_url}")
+        lines.append(f"**Narrated walkthrough:** {video_url}")
+    if full_session_url:
+        lines.append(f"**Full session recording:** {full_session_url}")
+    sections.append("\n".join(lines))
 
 
 def _append_footer(sections: list[str], contribution_url: str | None) -> None:
