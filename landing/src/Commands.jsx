@@ -61,13 +61,13 @@ function Commands() {
     {
       name: "trace serve",
       sig: "trace serve [--host 127.0.0.1] [--port 8000]",
-      desc: "Run the FastAPI web server. Serves the landing page, docs, and the /webhook/github endpoint for the @trace reviewer bot.",
+      desc: "Run the FastAPI web server. Serves the landing page, docs, and the /webhook/github endpoint for the /trace reviewer bot.",
       term: [
         { p: "$", c: "uv run trace serve" },
         { o: "uvicorn running on http://127.0.0.1:8000" },
         { o: "GET /         → landing" },
         { o: "GET /docs     → docs page" },
-        { o: "POST /webhook/github → @trace Q&A handler" },
+        { o: "POST /webhook/github → /trace Q&A handler" },
         { ok: "server ready" },
       ],
       bullets: [

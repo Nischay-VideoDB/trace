@@ -26,7 +26,7 @@ function Docs() {
     ["file", "    narration.py", "batched, scene + transcript grounded"],
     ["file", "    render.py", "editor.Timeline with 3 tracks: video / audio / badges"],
     ["file", "    generator.py", "end-to-end orchestration (clips + narration + render + all PR posts)"],
-    ["file", "    ship.py", "auto-commit + push + open PR + generate (called by generate without pr_url)"],
+    ["file", "    ship.py", "auto-commit + push + open PR logic (internal — invoked by generate when pr_url omitted)"],
     ["dir",  "  focus_mode/", ""],
     ["file", "    builder.py", "reviewer Focus Mode ranking"],
     ["dir",  "  contribution_map/", ""],
@@ -36,7 +36,7 @@ function Docs() {
     ["file", "    generator.py", "What / Why / Struggles / Follow-ups"],
     ["dir",  "  web/", ""],
     ["file", "    app.py", "FastAPI web server + landing mount"],
-    ["file", "    qa.py", "@trace polling bot"],
+    ["file", "    qa.py", "/trace polling bot — LLM answer + up to 3 clip URLs per question"],
   ];
 
   const env = [
@@ -103,7 +103,7 @@ function Docs() {
     ["videodb.connect", "videodb/client.py", "Auth + collection"],
     ["Collection.upload", "indexing/pipeline.py + capture/live_indexer.py", "Session video + 15s live chunks"],
     ["Collection.connect_rtstream", "videodb/client.py", "Live RTSP ingest path"],
-    ["Collection.generate_text", "pr_video/narration.py · pr_description/generator.py · pr_video/ship.py", "Narration, PR description, commit/PR title generation"],
+    ["Collection.generate_text", "pr_video/narration.py · pr_description/generator.py · web/qa.py · pr_video/ship.py", "Narration, PR description, Q&A answer synthesis, commit/PR title generation"],
     ["Collection.generate_voice", "pr_video/render.py", "Per-clip TTS via OmniVoice (voice-cloned)"],
     ["Collection.generate_image", "pr_video/render.py", "FLUX intro title card (16:9)"],
     ["Collection.generate_music", "pr_video/render.py", "Ambient background music track"],
@@ -166,7 +166,7 @@ function Docs() {
                 <div id="overview" className="docs-block">
                   <h3 className="docs-h2">Overview</h3>
                   <p>
-                    trace is a CLI plus a small FastAPI app. The CLI runs locally, captures your screen and mic during a coding session, and indexes the result through VideoDB. The FastAPI app serves the landing page and handles the @trace webhook. There is no managed backend.
+                    trace is a CLI plus a small FastAPI app. The CLI runs locally, captures your screen and mic during a coding session, and indexes the result through VideoDB. The FastAPI app serves the landing page and handles the /trace webhook. There is no managed backend.
                   </p>
                   <pre>{`trace start  →  trace stop  →  trace generate  →  PR decorated.
                               ↓

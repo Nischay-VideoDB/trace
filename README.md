@@ -259,8 +259,8 @@ trace_cli/
     narration.py             scene + transcript grounded scripts
     render.py                editor.Timeline with 3 tracks: video / audio / badges
     generator.py             end-to-end orchestration
-    ship.py                  auto-commit + push + open PR + generate
-    bug_replay.py            file+line → session interval lookup
+    ship.py                  auto-commit + push + open PR logic (internal, used by generate)
+    preview.py               thumbnail capture + GitHub release asset upload
     preview.py               local preview helpers
   focus_mode/
     builder.py               reviewer Focus Mode ranking
