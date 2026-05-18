@@ -8,21 +8,11 @@
 
 > Record your coding session. Stop. Your PR explains itself.
 
-**trace** gives your pull requests a memory. It watches your screen and mic while you code, indexes everything through VideoDB, and when you open a PR it posts a narrated walkthrough video, a context-aware description, a reviewer Q&A bot, and a human vs AI contribution map — all from one session recording.
-
-Built for the [VideoDB "Give Agents Eyes and Ears" hackathon](https://hackday.videodb.io) (May 16–18, 2026).
-
-**Demo:** recorded on https://github.com/crypticsaiyan/trace-test — that repo is the project being captured in the demo session.
-
----
-
-## Screenshots
-
 ![trace CLI](assets/cli.png)
 
-![Landing page](assets/landing_page.png)
+**trace** gives your pull requests a memory. It watches your screen and mic while you code, indexes everything through VideoDB, and when you open a PR it posts a narrated walkthrough video, a context-aware description, a reviewer Q&A bot, and a human vs AI contribution map — all from one session recording.
 
----
+**Demo Repo:** [trace-test](https://github.com/crypticsaiyan/trace-test)
 
 ## How it works
 
