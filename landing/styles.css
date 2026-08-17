@@ -435,8 +435,17 @@ a.lnk:hover { color: var(--accent); border-color: var(--accent); }
 .hero-term .term-body { flex: 1; }
 
 /* ───────────── Commands ───────────── */
-.cmd-tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--line); margin-bottom: 24px; overflow-x: auto; }
+.cmd-tabs {
+  display: flex;
+  gap: 4px;
+  min-width: 0;
+  max-width: 100%;
+  border-bottom: 1px solid var(--line);
+  margin-bottom: 24px;
+  overflow-x: auto;
+}
 .cmd-tab {
+  flex: 0 0 auto;
   appearance: none;
   background: transparent;
   border: 0;
@@ -482,7 +491,7 @@ a.lnk:hover { color: var(--accent); border-color: var(--accent); }
   grid-template-columns: repeat(3, 1fr);
   gap: 20px;
 }
-.install-step { padding: 24px 28px; }
+.install-step { min-width: 0; padding: 24px 28px; }
 .install-num {
   font-family: var(--display);
   font-style: italic;
@@ -501,6 +510,8 @@ a.lnk:hover { color: var(--accent); border-color: var(--accent); }
 .install-code {
   font-family: var(--mono);
   font-size: 11.5px;
+  min-width: 0;
+  max-width: 100%;
   background: #050507;
   border: 1px solid var(--line);
   padding: 12px 14px;

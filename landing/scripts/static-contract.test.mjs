@@ -48,3 +48,14 @@ test("landing copy reports the supported vendor and CLI counts consistently", as
   assert.match(commands, /name: "trace contribution-map"/);
   assert.equal((commands.match(/name: "trace /g) ?? []).length, 7);
 });
+
+test("mobile cards and command tabs contain wide command text", async () => {
+  const styles = await readFile(join(landingDirectory, "styles.css"), "utf8");
+
+  assert.match(styles, /\.cmd-tabs\s*\{[\s\S]*?min-width:\s*0;[\s\S]*?max-width:\s*100%;[\s\S]*?overflow-x:\s*auto;/);
+  assert.match(styles, /\.cmd-tab\s*\{[\s\S]*?flex:\s*0 0 auto;/);
+  assert.match(styles, /\.install-step\s*\{\s*min-width:\s*0;/);
+  assert.match(styles, /\.install-code\s*\{[\s\S]*?min-width:\s*0;[\s\S]*?max-width:\s*100%;[\s\S]*?overflow-x:\s*auto;/);
+  assert.match(styles, /@media \(max-width:\s*600px\)\s*\{[\s\S]*?:root\s*\{\s*--page-pad:\s*32px;/);
+  assert.match(styles, /@media \(max-width:\s*380px\)\s*\{[\s\S]*?:root\s*\{\s*--page-pad:\s*20px;/);
+});
