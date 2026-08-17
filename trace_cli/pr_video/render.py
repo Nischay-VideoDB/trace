@@ -18,7 +18,6 @@ import logging
 import os
 from dataclasses import dataclass
 
-from videodb import SandboxModel
 from videodb.editor import (
     AudioAsset,
     Background,
@@ -35,7 +34,7 @@ from videodb.editor import (
 )
 
 from trace_cli.pr_video.selector import Clip as SelectedClip
-from trace_cli.videodb.client import VideoDBClient
+from trace_cli.videodb.client import FLUX_MODEL, OMNIVOICE_MODEL, VideoDBClient
 
 _CATEGORY_BADGE = {
     "progress": "EDIT",
@@ -76,7 +75,7 @@ def _generate_clip_audio_cloned(args: tuple) -> tuple[int, object | None]:
     try:
         audio = collection.generate_voice(
             text=text,
-            model_name=SandboxModel.OMNIVOICE,
+            model_name=OMNIVOICE_MODEL,
             sandbox_id=sandbox_id,
             wait=True,
             timeout=600,
@@ -132,7 +131,7 @@ def render(
         ref_audio = client._collection.generate_voice(
             text=_REF_TEXT,
             voice_name=voice,
-            model_name=SandboxModel.OMNIVOICE,
+            model_name=OMNIVOICE_MODEL,
             sandbox_id=sandbox_id,
             wait=True,
             timeout=300,
@@ -168,7 +167,7 @@ def render(
             combined_audio = client._collection.generate_voice(
                 text=combined,
                 voice_name=voice,
-                model_name=SandboxModel.OMNIVOICE,
+                model_name=OMNIVOICE_MODEL,
                 sandbox_id=sandbox_id,
                 wait=True,
                 timeout=900,
@@ -195,7 +194,7 @@ def render(
                     "Small subtitle: 'session summary'. Clean developer aesthetic, no gradients, dark charcoal background."
                 ),
                 aspect_ratio="16:9",
-                model_name=SandboxModel.FLUX,
+                model_name=FLUX_MODEL,
                 sandbox_id=medium_sandbox_id,
                 config={"num_inference_steps": 28, "guidance_scale": 4.0},
                 wait=True,
@@ -215,7 +214,7 @@ def render(
 
             intro_voice = client._collection.generate_voice(
                 text=intro_script,
-                model_name=SandboxModel.OMNIVOICE,
+                model_name=OMNIVOICE_MODEL,
                 sandbox_id=sandbox_id,
                 wait=True,
                 timeout=300,

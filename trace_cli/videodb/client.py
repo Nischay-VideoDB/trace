@@ -27,7 +27,7 @@ from pathlib import Path
 from typing import Any
 
 import videodb
-from videodb import IndexType, MediaType, SandboxModel, SandboxTier, SceneExtractionType, SearchType
+from videodb import IndexType, MediaType, SandboxTier, SceneExtractionType, SearchType
 from videodb.collection import Collection
 from videodb.exceptions import (
     AuthenticationError as _VDBAuthError,
@@ -48,6 +48,13 @@ from videodb.video import Video
 from trace_cli.credentials import Credentials
 
 log = logging.getLogger("trace.videodb")
+
+# Released SDK 0.5.1 accepts model IDs directly, so keep the supported IDs
+# explicit and central.
+SMALL_VLM_MODEL = "google/gemma-4-E2B-it"
+MEDIUM_VLM_MODEL = "google/gemma-4-26B-A4B-it"
+OMNIVOICE_MODEL = "k2-fsa/OmniVoice"
+FLUX_MODEL = "black-forest-labs/FLUX.1-dev"
 
 
 # --- Typed exceptions ----------------------------------------------------
@@ -74,8 +81,8 @@ class VideoDBClient:
     """Thin wrapper around `videodb` SDK. One instance per CLI process."""
 
     def __init__(self, api_key: str | None = None) -> None:
-        Credentials.require("VIDEODB_API_KEY")
-        self._api_key = api_key or os.environ["VIDEODB_API_KEY"]
+        Credentials.require("VIDEO_DB_API_KEY")
+        self._api_key = api_key or Credentials.videodb_api_key()
         try:
             self._conn = videodb.connect(api_key=self._api_key)
             self._collection: Collection = self._conn.get_collection()
@@ -235,8 +242,8 @@ class VideoDBClient:
 
         # Model ladder: small-tier first (E2B), medium if needed (26B), bare fallback.
         attempts = [
-            (SandboxModel.GEMMA_4_E2B, "small"),
-            (SandboxModel.GEMMA_4_26B, "medium"),
+            (SMALL_VLM_MODEL, "small"),
+            (MEDIUM_VLM_MODEL, "medium"),
             (None, None),
         ]
         last_exc: Exception | None = None
@@ -346,7 +353,7 @@ class VideoDBClient:
             audio = self._collection.generate_voice(
                 text=text,
                 voice_name=voice,
-                model_name=SandboxModel.OMNIVOICE,
+                model_name=OMNIVOICE_MODEL,
                 sandbox_id=sandbox.id,
                 wait=True,
                 timeout=900,

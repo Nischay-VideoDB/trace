@@ -70,7 +70,7 @@ uv sync
 `.env` at repo root:
 
 ```
-VIDEODB_API_KEY=...
+VIDEO_DB_API_KEY=...
 GITHUB_TOKEN=...
 ```
 
@@ -92,7 +92,7 @@ uv sync --extra windows
 
 ### Voice generation
 
-**Provider:** VideoDB OmniVoice (`SandboxModel.OMNIVOICE`)  
+**Provider:** VideoDB OmniVoice (`k2-fsa/OmniVoice`)<br>
 **Settings:** WAV output, voice cloning via `ref_audio` + `ref_text`, 4 parallel workers for per-clip TTS.  
 **To swap providers:** Replace the three `collection.generate_voice(...)` calls in [trace_cli/pr_video/render.py](trace_cli/pr_video/render.py) (labelled: reference voice, per-clip, intro). Upload your provider's audio file via `collection.upload(file_path=..., media_type="audio")` and use the returned asset id on the narration track.
 

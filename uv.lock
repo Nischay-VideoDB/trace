@@ -682,9 +682,9 @@ requires-dist = [
     { name = "rich", specifier = ">=13.9" },
     { name = "typer", specifier = ">=0.16" },
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.32" },
-    { name = "videodb", git = "https://github.com/video-db/videodb-python.git?rev=hackathon" },
-    { name = "videodb", extras = ["capture"], marker = "extra == 'macos'", git = "https://github.com/video-db/videodb-python.git?rev=hackathon" },
-    { name = "videodb", extras = ["capture"], marker = "extra == 'windows'", git = "https://github.com/video-db/videodb-python.git?rev=hackathon" },
+    { name = "videodb", specifier = ">=0.5.1,<0.6" },
+    { name = "videodb", extras = ["capture"], marker = "extra == 'macos'", specifier = ">=0.4.5" },
+    { name = "videodb", extras = ["capture"], marker = "extra == 'windows'", specifier = ">=0.4.5" },
     { name = "watchdog", marker = "extra == 'macos'", specifier = ">=4.0" },
     { name = "watchdog", marker = "extra == 'windows'", specifier = ">=4.0" },
 ]
@@ -784,13 +784,17 @@ wheels = [
 
 [[package]]
 name = "videodb"
-version = "0.4.5"
-source = { git = "https://github.com/video-db/videodb-python.git?rev=hackathon#75bbc641b4f5b0c2448028998dcf99393650be5d" }
+version = "0.5.1"
+source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "backoff" },
     { name = "requests" },
     { name = "tqdm" },
     { name = "websockets" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/4f/af/99c122abb2fe060eb97a8669175a0a605a0469eae9a3df826ad864f636ca/videodb-0.5.1.tar.gz", hash = "sha256:27f9e521583c550dff24844588ec60781bf112c1a4eea770343185d4715a9648", size = 92602, upload-time = "2026-07-24T18:58:56.128Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/a9/44/768015c9d5e880808af7dd462a55744e6b775cdbda89dd3dd368c52dd1e4/videodb-0.5.1-py3-none-any.whl", hash = "sha256:e31b5a202f098271d911be268e2268a52531f659735560b2b0e40dc5d9835ec9", size = 95877, upload-time = "2026-07-24T18:58:54.758Z" },
 ]
 
 [package.optional-dependencies]

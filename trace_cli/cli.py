@@ -65,7 +65,7 @@ def start(
     chunk_seconds: int = typer.Option(15, "--chunk-seconds", help="Live chunk size"),
 ) -> None:
     """Start a new capture session (screen + mic). Blocks until SIGINT or `trace stop`."""
-    Credentials.require("VIDEODB_API_KEY")
+    Credentials.require("VIDEO_DB_API_KEY")
     from trace_cli.capture.heartbeat import HeartbeatThread
     from trace_cli.capture.live_indexer import LiveIndexer
     from trace_cli.capture.platform import SaveWatcher, WindowPoller, start_capture, stop_capture
@@ -158,7 +158,7 @@ def start(
     console.print(f"[green]video:[/green] {video_path}")
     if real_audio_path:
         console.print(f"[green]audio:[/green] {real_audio_path}")
-    console.print(f"[cyan]session {meta.session_id} ready for indexing. run `trace stop`'s indexing pipeline next (TODO).[/cyan]")
+    console.print(f"[cyan]session {meta.session_id} is ready. In another terminal, run `trace stop` to finalize and index it.[/cyan]")
 
 
 # ---------- stop ----------------------------------------------------------
@@ -168,7 +168,7 @@ def stop(
     skip_index: bool = typer.Option(False, "--skip-index", help="Skip VideoDB upload + indexing"),
 ) -> None:
     """Signal the active capture session to finalize and run indexing pipeline."""
-    Credentials.require("VIDEODB_API_KEY")
+    Credentials.require("VIDEO_DB_API_KEY")
     from trace_cli.indexing.pipeline import IndexingError, run_indexing
     from trace_cli.session.manager import NoActiveSession, SessionManager
 
@@ -239,7 +239,7 @@ def generate(
     Without one:     trace generate <session_id>
                      Auto-commits staged changes, pushes branch, opens PR, then generates.
     """
-    Credentials.require("VIDEODB_API_KEY", "GITHUB_TOKEN")
+    Credentials.require("VIDEO_DB_API_KEY", "GITHUB_TOKEN")
     from trace_cli.pr_video.selector import InsufficientContent
 
     if pr_url:
@@ -290,7 +290,7 @@ def serve(
     port: int = typer.Option(8000, "--port"),
 ) -> None:
     """Run FastAPI app: /webhook/github."""
-    Credentials.require("VIDEODB_API_KEY", "GITHUB_TOKEN")
+    Credentials.require("VIDEO_DB_API_KEY", "GITHUB_TOKEN")
     import uvicorn
     uvicorn.run("trace_cli.web.app:app", host=host, port=port, reload=False)
 
@@ -303,7 +303,7 @@ def qa_poll(
     stop_after: int = typer.Option(0, "--stop-after", help="Exit after N seconds (0 = run forever)"),
 ) -> None:
     """Poll GitHub PR comments and answer /trace mentions."""
-    Credentials.require("VIDEODB_API_KEY", "GITHUB_TOKEN")
+    Credentials.require("VIDEO_DB_API_KEY", "GITHUB_TOKEN")
     from trace_cli.web.qa import poll_loop
     console.print(f"[cyan]polling {pr_url} for /trace every {interval}s (session={session_id})[/cyan]")
     poll_loop(
@@ -499,7 +499,7 @@ def pr_description(
     title: str = typer.Option("this change", "--title"),
 ) -> None:
     """Generate the What/Why/Struggles/Follow-ups PR description."""
-    Credentials.require("VIDEODB_API_KEY")
+    Credentials.require("VIDEO_DB_API_KEY")
     from trace_cli.pr_description.generator import build
     from trace_cli.session.models import Transcript
     from trace_cli.session.store import SessionStore
@@ -523,5 +523,4 @@ def pr_description(
         from trace_cli.github.client import GitHubClient
         GitHubClient().append_description(pr_url, desc.body)
         console.print(f"\n[green]appended to {pr_url}[/green]")
-
 

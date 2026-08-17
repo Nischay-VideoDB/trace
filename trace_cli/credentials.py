@@ -13,10 +13,9 @@ from dotenv import load_dotenv
 _PROJECT_ROOT = Path(__file__).resolve().parent.parent
 load_dotenv(_PROJECT_ROOT / ".env", override=False)
 
-REQUIRED_ENV = (
-    "VIDEODB_API_KEY",
-    "GITHUB_TOKEN",
-)
+VIDEO_DB_API_KEY = "VIDEO_DB_API_KEY"
+_LEGACY_VIDEODB_API_KEY = "VIDEODB_API_KEY"
+REQUIRED_ENV = (VIDEO_DB_API_KEY, "GITHUB_TOKEN")
 
 
 class Credentials:
@@ -31,7 +30,30 @@ class Credentials:
 
     @staticmethod
     def collect_missing(required: Iterable[str]) -> list[str]:
-        return [name for name in required if Credentials.is_missing(os.environ.get(name))]
+        missing: list[str] = []
+        for name in required:
+            canonical = VIDEO_DB_API_KEY if name == _LEGACY_VIDEODB_API_KEY else name
+            if canonical == VIDEO_DB_API_KEY:
+                if Credentials.is_missing(Credentials.videodb_api_key(optional=True)):
+                    missing.append(canonical)
+            elif Credentials.is_missing(os.environ.get(canonical)):
+                missing.append(canonical)
+        return missing
+
+    @staticmethod
+    def videodb_api_key(*, optional: bool = False) -> str | None:
+        """Read the released SDK's env var, with a read-only legacy alias.
+
+        Existing local `.env` files keep working, but new setup and all error
+        messages use ``VIDEO_DB_API_KEY``, which is what `videodb.connect()`
+        reads when no explicit key is passed.
+        """
+        value = os.environ.get(VIDEO_DB_API_KEY) or os.environ.get(_LEGACY_VIDEODB_API_KEY)
+        if optional:
+            return value
+        if Credentials.is_missing(value):
+            Credentials.require(VIDEO_DB_API_KEY)
+        return value
 
     @staticmethod
     def redact(value: str) -> str:
@@ -49,7 +71,7 @@ class Credentials:
                 f"Missing required environment variables: {', '.join(missing)}\n"
             )
             sys.stderr.write(
-                "Set them in /home/cryptosaiyan/Documents/trace/.env or your shell.\n"
+                f"Set them in {_PROJECT_ROOT / '.env'} or your shell.\n"
             )
             sys.exit(2)
 
@@ -60,8 +82,8 @@ class RedactingFormatter(logging.Formatter):
     def __init__(self, fmt: str | None = None, datefmt: str | None = None) -> None:
         super().__init__(fmt, datefmt)
         self._secrets: list[str] = []
-        for name in REQUIRED_ENV:
-            v = os.environ.get(name)
+        candidates = (Credentials.videodb_api_key(optional=True), os.environ.get("GITHUB_TOKEN"))
+        for v in candidates:
             if v and not Credentials.is_missing(v):
                 self._secrets.append(v)
 

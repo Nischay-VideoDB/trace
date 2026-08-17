@@ -4,7 +4,7 @@ version = "0.1.0"
 description = "Watch coding session, index via VideoDB, generate narrated PR video, answer reviewer Q&A from session memory"
 requires-python = ">=3.12,<3.13"
 dependencies = [
-    "videodb>=0.4.5",
+    "videodb>=0.5.1,<0.6",
     "typer>=0.16",
     "pydantic>=2.9",
     "httpx>=0.28",
@@ -40,9 +40,6 @@ windows = [
     "pywin32>=306",
     "psutil>=6.0",
 ]
-
-[tool.uv.sources]
-videodb = { git = "https://github.com/video-db/videodb-python.git", rev = "hackathon" }
 
 [build-system]
 requires = ["hatchling"]

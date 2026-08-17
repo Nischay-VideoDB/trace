@@ -47,7 +47,7 @@ function Docs() {
   ];
 
   const env = [
-    ["VIDEODB_API_KEY", "Required. Get one from videodb.io or claim sandbox credit."],
+    ["VIDEO_DB_API_KEY", "Required. Create one in VideoDB Console."],
     ["GITHUB_TOKEN", "Required for trace generate / qa-poll. Needs repo + pull_request scopes."],
     ["TRACE_HOME", "Optional. Default ~/.trace · session store root."],
     ["TRACE_NARRATION_MODEL", "Optional. basic | pro | ultra. Default pro."],

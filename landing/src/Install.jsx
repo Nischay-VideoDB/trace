@@ -7,7 +7,7 @@ function QuickstartTerminal() {
         { o: "Cloning into 'trace'... done." },
         { p: "$", c: "uv sync" },
         { o: "Resolved 24 packages in 1.2s · installed in 0.8s" },
-        { p: "$", c: "cp .env.example .env  # add your VIDEODB_API_KEY + GITHUB_TOKEN" },
+        { p: "$", c: "cp .env.example .env  # add your VIDEO_DB_API_KEY + GITHUB_TOKEN" },
         { p: "$", c: "uv run trace start --project ~/code/my-repo --live" },
         { o: "session_id: 7a2f-e831" },
         { o: "session_dir: ~/.trace/sessions/7a2f-e831/" },
@@ -145,8 +145,8 @@ function Install() {
     {
       n: "02",
       h: "Set keys",
-      code: "# .env at repo root\nVIDEODB_API_KEY=...\nGITHUB_TOKEN=...",
-      note: "VIDEODB_API_KEY: claim $1,000 sandbox credit at hackday.videodb.io/sandbox.html. GITHUB_TOKEN: needs repo + pull_request scopes.",
+      code: "# .env at repo root\nVIDEO_DB_API_KEY=...\nGITHUB_TOKEN=...",
+      note: "VIDEO_DB_API_KEY: create an API key in VideoDB Console. GITHUB_TOKEN: needs repo + pull_request scopes.",
     },
     {
       n: "03",
