@@ -82,7 +82,11 @@ class RedactingFormatter(logging.Formatter):
     def __init__(self, fmt: str | None = None, datefmt: str | None = None) -> None:
         super().__init__(fmt, datefmt)
         self._secrets: list[str] = []
-        candidates = (Credentials.videodb_api_key(optional=True), os.environ.get("GITHUB_TOKEN"))
+        candidates = (
+            os.environ.get(VIDEO_DB_API_KEY),
+            os.environ.get(_LEGACY_VIDEODB_API_KEY),
+            os.environ.get("GITHUB_TOKEN"),
+        )
         for v in candidates:
             if v and not Credentials.is_missing(v):
                 self._secrets.append(v)

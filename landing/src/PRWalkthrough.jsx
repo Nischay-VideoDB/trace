@@ -118,7 +118,7 @@ function PRWalkthrough() {
             <h2 className="section-title">Your PR,<br/>narrated.</h2>
           </div>
           <p className="section-sub">
-            After <span className="acc">trace generate</span>, reviewers see this. Scrub the timeline: narration, diff, and badges swap per clip. Every word is grounded in the scene index + transcript. No hallucination.
+            <strong>Prepared sample walkthrough.</strong> This visual is mock data, not a live GitHub pull request or VideoDB session. It illustrates the narration, diff, and badge review flow.
           </p>
         </div>
 
