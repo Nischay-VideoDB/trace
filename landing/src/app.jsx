@@ -5,6 +5,7 @@ function App() {
       <div className="page">
         <Nav active="" />
         <Hero />
+        <PreparedExamples />
         <Commands />
         <PRWalkthrough />
         <Features />

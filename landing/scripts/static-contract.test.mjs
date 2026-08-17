@@ -12,20 +12,24 @@ async function readOutput(file) {
 }
 
 test("landing ships precompiled browser assets without runtime Babel", async () => {
-  const [index, docs, appBundle, docsBundle, vercelConfig] = await Promise.all([
+  const [index, docs, appBundle, docsBundle, vercelConfig, manifest] = await Promise.all([
     readOutput("index.html"),
     readOutput("docs.html"),
     readOutput("trace-app.js"),
     readOutput("trace-docs.js"),
     readFile(join(landingDirectory, "vercel.json"), "utf8"),
+    readFile(join(outputDirectory, "prepared-examples.v1.json"), "utf8"),
   ]);
 
   for (const document of [index, docs]) {
     assert.doesNotMatch(document, /@babel\/standalone|text\/babel/i);
   }
   assert.match(index, /\/static\/trace-app\.js/);
+  assert.match(index, /hls\.js@1\.6\.16\/dist\/hls\.min\.js/);
+  assert.match(index, /integrity="sha384-5E8B0pTlZZJMabWpC0fyYf6OUpe15jJij34BqBAh4NXoHAlLNOjCPRrwtOXOQFAn"/);
   assert.match(docs, /\/static\/trace-docs\.js/);
   assert.match(appBundle, /\/\* src\/app\.jsx \*\//);
+  assert.match(appBundle, /\/\* src\/PreparedExamples\.jsx \*\//);
   assert.match(docsBundle, /\/\* src\/Docs\.jsx \*\//);
   assert.deepEqual(
     JSON.parse(vercelConfig).rewrites.find(({ source }) => source === "/favicon.ico"),
@@ -33,6 +37,37 @@ test("landing ships precompiled browser assets without runtime Babel", async () 
   );
   new Function(appBundle);
   new Function(docsBundle);
+  assert.equal(JSON.parse(manifest).version, 1);
+});
+
+test("prepared examples are complete, labelled, and stream original public outputs", async () => {
+  const manifestSource = await readFile(join(landingDirectory, "prepared-examples.v1.json"), "utf8");
+  const manifest = JSON.parse(manifestSource);
+  const kinds = manifest.examples.map((example) => example.kind).sort();
+
+  assert.equal(manifest.version, 1);
+  assert.deepEqual(kinds, ["Bug fix", "Feature", "Refactor"]);
+  assert.equal(new Set(manifest.examples.map((example) => example.id)).size, 3);
+  assert.doesNotMatch(manifestSource, /api[_-]?key|token/i);
+
+  for (const example of manifest.examples) {
+    assert.equal(example.chapters.length, 3);
+    assert.ok(example.chapters.every(({ start, end }) => Number.isFinite(start) && Number.isFinite(end) && start < end));
+    assert.match(example.source.note, /public|synthetic/i);
+    assert.ok(example.evidence.text.length > 30);
+    assert.ok(example.transcript.text.length > 30 && example.transcript.citation.length > 4);
+    assert.ok(example.qa.question.length > 10 && example.qa.answer.length > 30);
+  }
+
+  const feature = manifest.examples.find(({ kind }) => kind === "Feature");
+  const bug = manifest.examples.find(({ kind }) => kind === "Bug fix");
+  const refactor = manifest.examples.find(({ kind }) => kind === "Refactor");
+  assert.match(feature.media.src, /^https:\/\/play\.videodb\.io\/v1\/.+\.m3u8$/);
+  assert.match(bug.media.src, /^https:\/\/play\.videodb\.io\/v1\/.+\.m3u8$/);
+  assert.match(feature.media.rights_note, /does not copy or redistribute/i);
+  assert.match(bug.media.rights_note, /does not copy or redistribute/i);
+  assert.equal(refactor.media.status, "unavailable");
+  assert.match(refactor.media.message, /interactive timeline and evidence panel/i);
 });
 
 test("landing copy reports the supported vendor and CLI counts consistently", async () => {
@@ -58,4 +93,6 @@ test("mobile cards and command tabs contain wide command text", async () => {
   assert.match(styles, /\.install-code\s*\{[\s\S]*?min-width:\s*0;[\s\S]*?max-width:\s*100%;[\s\S]*?overflow-x:\s*auto;/);
   assert.match(styles, /@media \(max-width:\s*600px\)\s*\{[\s\S]*?:root\s*\{\s*--page-pad:\s*32px;/);
   assert.match(styles, /@media \(max-width:\s*380px\)\s*\{[\s\S]*?:root\s*\{\s*--page-pad:\s*20px;/);
+  assert.match(styles, /\.prepared-picker\s*\{[\s\S]*?grid-template-columns:\s*repeat\(3,\s*minmax\(0,\s*1fr\)\)/);
+  assert.match(styles, /@media \(max-width:\s*700px\)\s*\{[\s\S]*?\.prepared-picker\s*\{\s*grid-template-columns:\s*1fr;/);
 });

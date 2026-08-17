@@ -11,6 +11,7 @@ const bundles = {
   "trace-app.js": [
     "src/Nav.jsx",
     "src/Hero.jsx",
+    "src/PreparedExamples.jsx",
     "src/Commands.jsx",
     "src/PRWalkthrough.jsx",
     "src/Install.jsx",
@@ -44,7 +45,7 @@ await rm(outputDirectory, { force: true, recursive: true });
 await mkdir(outputDirectory, { recursive: true });
 await Promise.all([
   cp(join(landingDirectory, "favicons"), join(outputDirectory, "favicons"), { recursive: true }),
-  ...["index.html", "docs.html", "styles.css", "logo.png"].map((file) =>
+  ...["index.html", "docs.html", "styles.css", "logo.png", "prepared-examples.v1.json"].map((file) =>
     cp(join(landingDirectory, file), join(outputDirectory, file)),
   ),
 ]);

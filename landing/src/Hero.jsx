@@ -122,6 +122,7 @@ function Hero() {
           </p>
           <div className="hero-ctas">
             <a className="btn primary" href="#install">Install →</a>
+            <a className="btn" href="#examples">Explore prepared examples</a>
             <a className="btn" href="#features">Features</a>
           </div>
           <div className="hero-stats">

@@ -1,0 +1,209 @@
+{
+  "version": 1,
+  "label": "Prepared examples - public and synthetic pre-run material",
+  "examples": [
+    {
+      "id": "feature-pr-walkthrough",
+      "kind": "Feature",
+      "title": "Narrated PR walkthrough",
+      "summary": "A public Trace PR walkthrough that demonstrates the published feature work around voice consistency, an intro card, and narrative clip selection.",
+      "source": {
+        "label": "Public upstream Trace PR #1",
+        "url": "https://github.com/crypticsaiyan/trace/pull/1",
+        "note": "Prepared from a walkthrough the upstream author attached to this public pull request."
+      },
+      "pullRequest": {
+        "label": "PR #1",
+        "state": "Closed",
+        "scope": "2 published files"
+      },
+      "chapters": [
+        {
+          "start": 0,
+          "end": 18,
+          "label": "Walkthrough setup",
+          "evidence": "The published output opens with the narrated walkthrough treatment."
+        },
+        {
+          "start": 18,
+          "end": 47,
+          "label": "Code and research",
+          "evidence": "The public recording moves between a greeter module and documentation research."
+        },
+        {
+          "start": 47,
+          "end": 78,
+          "label": "Failure evidence and tests",
+          "evidence": "The published terminal segment shows a KeyError investigation followed by test output."
+        }
+      ],
+      "files": [
+        "trace_cli/pr_video/narration.py",
+        "trace_cli/pr_video/render.py"
+      ],
+      "contribution": [
+        { "label": "Human", "value": 0, "className": "human" },
+        { "label": "Agent", "value": 0, "className": "agent" },
+        { "label": "Unknown", "value": 100, "className": "unknown" }
+      ],
+      "contributionNote": "The accompanying public contribution comment classified all nine observed changed lines as unknown, rather than assigning human or agent authorship.",
+      "evidence": {
+        "label": "Published PR evidence",
+        "text": "The PR describes voice-consistent narration, a title card, and narrative clip selection. Its published follow-up records the observed lines as unknown attribution.",
+        "citation": "PR #1 description and public contribution comment"
+      },
+      "transcript": {
+        "label": "Published PR excerpt - not a generated transcript",
+        "text": "Voice consistency is established from a reference clip, and the walkthrough filters irrelevant paths before selecting its narrative clips.",
+        "citation": "PR #1 description"
+      },
+      "qa": {
+        "question": "What does this prepared output make reviewable?",
+        "answer": "It pairs the public implementation summary with a narrated output and a file-level attribution note, so a reviewer can move between context and evidence without starting a run.",
+        "citation": "Published Trace PR #1"
+      },
+      "media": {
+        "status": "available",
+        "src": "https://play.videodb.io/v1/79fe0b15-acda-416f-9546-80d41533affc.m3u8",
+        "type": "application/vnd.apple.mpegurl",
+        "duration": "01:18",
+        "label": "Play the public narrated PR walkthrough",
+        "rights_note": "Streamed from the original public output linked by the upstream repository owner; this gallery does not copy or redistribute the media file."
+      }
+    },
+    {
+      "id": "bug-replay",
+      "kind": "Bug fix",
+      "title": "Replay a failure-to-fix arc",
+      "summary": "A public Trace replay that isolates the failure moment, the terminal error, and the subsequent fix from the upstream PR session.",
+      "source": {
+        "label": "Public upstream Trace PR #1 replay",
+        "url": "https://github.com/crypticsaiyan/trace/pull/1#issuecomment-4472672710",
+        "note": "Prepared from the public replay linked by the upstream author in the pull request discussion."
+      },
+      "pullRequest": {
+        "label": "PR #1 replay",
+        "state": "Published evidence",
+        "scope": "33-second replay"
+      },
+      "chapters": [
+        {
+          "start": 0,
+          "end": 11,
+          "label": "Failure moment",
+          "evidence": "The public replay description identifies this as the captured failure moment."
+        },
+        {
+          "start": 11,
+          "end": 22,
+          "label": "Terminal error",
+          "evidence": "The replay is explicitly stitched with the terminal-error evidence."
+        },
+        {
+          "start": 22,
+          "end": 33,
+          "label": "Subsequent fix",
+          "evidence": "The public replay description closes with the subsequent fix."
+        }
+      ],
+      "files": [
+        "Published replay evidence",
+        "Public PR discussion",
+        "No private session data"
+      ],
+      "contribution": [
+        { "label": "Not classified in this clip", "value": 100, "className": "unknown" }
+      ],
+      "contributionNote": "This short replay does not claim file-level attribution. The public PR contribution comment remains the source for its separate attribution evidence.",
+      "evidence": {
+        "label": "Published replay note",
+        "text": "The upstream author described this clip as stitched from the recorded failure moment, the terminal error, and the subsequent fix.",
+        "citation": "Public PR #1 replay comment"
+      },
+      "transcript": {
+        "label": "Published replay excerpt - not a generated transcript",
+        "text": "The public replay is stitched from the recorded failure moment, the terminal error, and the subsequent fix.",
+        "citation": "PR #1 replay comment"
+      },
+      "qa": {
+        "question": "Why keep this as a separate prepared example?",
+        "answer": "It demonstrates the review value of a bounded evidence clip: a reviewer can inspect the failure-to-fix sequence without treating it as a live run or a full PR walkthrough.",
+        "citation": "Published Trace PR #1 replay"
+      },
+      "media": {
+        "status": "available",
+        "src": "https://play.videodb.io/v1/06a989e7-a484-4e48-9621-6133aa3b7b3f.m3u8",
+        "type": "application/vnd.apple.mpegurl",
+        "duration": "00:33",
+        "label": "Play the public bug replay",
+        "rights_note": "Streamed from the original public output linked by the upstream repository owner; this gallery does not copy or redistribute the media file."
+      }
+    },
+    {
+      "id": "refactor-boundaries",
+      "kind": "Refactor",
+      "title": "Separate review stages from presentation",
+      "summary": "A synthetic, public-safe pre-run refactor scenario. Its structured evidence is illustrative only and intentionally has no generated clip.",
+      "source": {
+        "label": "Synthetic pre-run scenario",
+        "url": "#examples",
+        "note": "Synthetic material authored for this gallery - not a live GitHub pull request, VideoDB session, or generated output."
+      },
+      "pullRequest": {
+        "label": "Prepared refactor R-03",
+        "state": "Synthetic",
+        "scope": "3 illustrative files"
+      },
+      "chapters": [
+        {
+          "start": 0,
+          "end": 18,
+          "label": "Boundary proposal",
+          "evidence": "Prepared note: keep review-stage selection independent from display formatting."
+        },
+        {
+          "start": 18,
+          "end": 41,
+          "label": "Extract the presenter",
+          "evidence": "Prepared note: move display-only transformation behind a focused presenter interface."
+        },
+        {
+          "start": 41,
+          "end": 63,
+          "label": "Regression coverage",
+          "evidence": "Prepared note: retain review evidence while testing the new presentation boundary."
+        }
+      ],
+      "files": [
+        "review/boundaries.ts",
+        "review/presenter.ts",
+        "tests/review/presenter.test.ts"
+      ],
+      "contribution": [
+        { "label": "Human", "value": 60, "className": "human" },
+        { "label": "Agent", "value": 20, "className": "agent" },
+        { "label": "Shared", "value": 20, "className": "mixed" }
+      ],
+      "contributionNote": "Illustrative proportions for this synthetic scenario - not measured attribution data.",
+      "evidence": {
+        "label": "Prepared evidence note",
+        "text": "This scenario keeps the chapter timeline, contribution map, and reviewer answer interactive so the gallery remains useful without claiming a rendered or provider-generated result.",
+        "citation": "Synthetic pre-run material"
+      },
+      "transcript": {
+        "label": "Prepared review excerpt - synthetic",
+        "text": "Keep stage selection independent from display formatting, extract a focused presenter, and preserve evidence through the regression check.",
+        "citation": "Synthetic pre-run material"
+      },
+      "qa": {
+        "question": "What changes for a reviewer?",
+        "answer": "The prepared evidence isolates the refactor goal, the presentation extraction, and the regression check. It is deliberately an illustrative review exercise, not a captured run.",
+        "citation": "Synthetic pre-run material"
+      },
+      "media": {
+        "status": "unavailable",
+        "message": "No generated clip is included for this synthetic refactor scenario. The interactive timeline and evidence panel are the complete prepared result."
+      }
+    }
+  ]
+}

@@ -1,6 +1,7 @@
 function Nav({ active }) {
   const items = [
     { href: "/#commands", label: "CLI" },
+    { href: "/#examples", label: "Examples" },
     { href: "/#walkthrough", label: "Walkthrough" },
     { href: "/#install", label: "Install" },
     { href: "/docs", label: "Docs" },
