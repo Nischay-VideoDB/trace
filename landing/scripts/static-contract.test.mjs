@@ -1,0 +1,45 @@
+import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
+import { join } from "node:path";
+import test from "node:test";
+import { fileURLToPath } from "node:url";
+
+const landingDirectory = join(fileURLToPath(new URL("..", import.meta.url)));
+const outputDirectory = join(landingDirectory, "dist");
+
+async function readOutput(file) {
+  return readFile(join(outputDirectory, file), "utf8");
+}
+
+test("landing ships precompiled browser assets without runtime Babel", async () => {
+  const [index, docs, appBundle, docsBundle] = await Promise.all([
+    readOutput("index.html"),
+    readOutput("docs.html"),
+    readOutput("trace-app.js"),
+    readOutput("trace-docs.js"),
+  ]);
+
+  for (const document of [index, docs]) {
+    assert.doesNotMatch(document, /@babel\/standalone|text\/babel/i);
+  }
+  assert.match(index, /\/static\/trace-app\.js/);
+  assert.match(docs, /\/static\/trace-docs\.js/);
+  assert.match(appBundle, /\/\* src\/app\.jsx \*\//);
+  assert.match(docsBundle, /\/\* src\/Docs\.jsx \*\//);
+  new Function(appBundle);
+  new Function(docsBundle);
+});
+
+test("landing copy reports the supported vendor and CLI counts consistently", async () => {
+  const [hero, commands] = await Promise.all([
+    readFile(join(landingDirectory, "src/Hero.jsx"), "utf8"),
+    readFile(join(landingDirectory, "src/Commands.jsx"), "utf8"),
+  ]);
+
+  assert.match(hero, /twenty-four API calls/);
+  assert.match(hero, /CLI commands[\s\S]*>7</);
+  assert.match(hero, /contribution-map/);
+  assert.match(commands, /Seven verbs\. One pipeline\./);
+  assert.match(commands, /name: "trace contribution-map"/);
+  assert.equal((commands.match(/name: "trace /g) ?? []).length, 7);
+});

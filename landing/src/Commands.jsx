@@ -111,6 +111,22 @@ function Commands() {
         "Designed to make 20-file PRs reviewable in 5 minutes",
       ],
     },
+    {
+      name: "trace contribution-map",
+      sig: "trace contribution-map <session_id> --pr <url> [--post]",
+      desc: "Classify each changed line in a pull request as human, agent, mixed, or unknown using the captured coding-session evidence.",
+      term: [
+        { p: "$", c: "uv run trace contribution-map 7a2f --pr https://github.com/you/repo/pull/12 --post" },
+        { o: "diff: 14 files · 612 added lines" },
+        { o: "auth.py · human=84 · agent=16 · mixed=7" },
+        { o: "tests/test_auth.py · agent=42 · human=10" },
+        { ok: "contribution map posted to the PR" },
+      ],
+      bullets: [
+        "Uses session timestamps, saved files, and supported AI-assistant evidence",
+        "Keeps unknown attribution explicit instead of guessing",
+      ],
+    },
   ];
 
   const [i, setI] = React.useState(0);
@@ -122,7 +138,7 @@ function Commands() {
         <div className="section-head">
           <div>
             <span className="section-tag">The CLI</span>
-            <h2 className="section-title">Six verbs. One pipeline.</h2>
+            <h2 className="section-title">Seven verbs. One pipeline.</h2>
           </div>
           <p className="section-sub">
             Every command runs against the same session store and the same VideoDB collection. Start records, stop indexes, generate decorates the PR, the rest are surfaces over the index.

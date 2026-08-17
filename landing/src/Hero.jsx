@@ -118,7 +118,7 @@ function Hero() {
             <span className="acc">narrated</span><span className="acc">.</span>
           </h1>
           <p className="hero-sub">
-            record a coding session. get a PR that explains itself: narrated walkthrough video, /trace Q&amp;A bot, focus mode, contribution map. one vendor, fifteen API calls.
+            record a coding session. get a PR that explains itself: narrated walkthrough video, /trace Q&amp;A bot, focus mode, contribution map. one vendor, twenty-four API calls.
           </p>
           <div className="hero-ctas">
             <a className="btn primary" href="#install">Install →</a>
