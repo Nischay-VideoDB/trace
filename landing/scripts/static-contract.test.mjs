@@ -12,11 +12,12 @@ async function readOutput(file) {
 }
 
 test("landing ships precompiled browser assets without runtime Babel", async () => {
-  const [index, docs, appBundle, docsBundle] = await Promise.all([
+  const [index, docs, appBundle, docsBundle, vercelConfig] = await Promise.all([
     readOutput("index.html"),
     readOutput("docs.html"),
     readOutput("trace-app.js"),
     readOutput("trace-docs.js"),
+    readFile(join(landingDirectory, "vercel.json"), "utf8"),
   ]);
 
   for (const document of [index, docs]) {
@@ -26,6 +27,10 @@ test("landing ships precompiled browser assets without runtime Babel", async () 
   assert.match(docs, /\/static\/trace-docs\.js/);
   assert.match(appBundle, /\/\* src\/app\.jsx \*\//);
   assert.match(docsBundle, /\/\* src\/Docs\.jsx \*\//);
+  assert.deepEqual(
+    JSON.parse(vercelConfig).rewrites.find(({ source }) => source === "/favicon.ico"),
+    { source: "/favicon.ico", destination: "/favicons/favicon-32.png" },
+  );
   new Function(appBundle);
   new Function(docsBundle);
 });

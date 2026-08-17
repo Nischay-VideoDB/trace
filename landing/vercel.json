@@ -4,6 +4,7 @@
   "outputDirectory": "dist",
   "rewrites": [
     { "source": "/docs", "destination": "/docs.html" },
+    { "source": "/favicon.ico", "destination": "/favicons/favicon-32.png" },
     { "source": "/static/(.*)", "destination": "/$1" }
   ],
   "headers": [
