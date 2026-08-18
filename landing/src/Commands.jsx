@@ -138,10 +138,10 @@ function Commands() {
         <div className="section-head">
           <div>
             <span className="section-tag">The CLI</span>
-            <h2 className="section-title">Seven verbs. One pipeline.</h2>
+            <h2 className="section-title">Seven core verbs. One pipeline.</h2>
           </div>
           <p className="section-sub">
-            Every command runs against the same session store and the same VideoDB collection. Start records, stop indexes, generate decorates the PR, the rest are surfaces over the index.
+            These seven featured commands cover the core demo flow; the CLI exposes fifteen commands in total. Every command runs against the same session store and the same VideoDB collection.
           </p>
         </div>
 

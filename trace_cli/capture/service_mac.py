@@ -5,9 +5,9 @@ Requires:
     pip install watchdog
 
 The CaptureClient SDK ships macOS wheels and handles screen + mic natively.
-On stop, the session is exported to a VideoDB video — we download it locally
-so the rest of the pipeline (indexing, timeline, PR video) works identically
-to the Linux path.
+On stop, the session is exported to a durable VideoDB video. The CLI reuses
+that provider asset directly for indexing instead of downloading an HLS
+manifest and uploading the same recording a second time.
 
 Active window tracking uses osascript (built-in on macOS, no extra deps).
 File save watching uses watchdog's FSEvents observer (native macOS kernel API).
@@ -15,9 +15,7 @@ File save watching uses watchdog's FSEvents observer (native macOS kernel API).
 from __future__ import annotations
 
 import asyncio
-import json
 import logging
-import os
 import subprocess
 import threading
 import time
@@ -41,6 +39,14 @@ class CaptureHandles:
     audio_proc: None = None
     # macOS-specific: hold references so GC doesn't kill them
     _sdk_state: dict = field(default_factory=dict)
+
+    @property
+    def provider_video_id(self) -> str | None:
+        return self._sdk_state.get("video_id")
+
+    @property
+    def capture_session_id(self) -> str | None:
+        return self._sdk_state.get("cap_session_id")
 
 
 class FakeProcess:
@@ -74,20 +80,18 @@ def start_capture(output_path: Path, *, fps: int = 30, mic: bool = True) -> Capt
     sdk_state: dict = {}
     ready = threading.Event()
     error_holder: list[Exception] = []
+    sdk_state["errors"] = error_holder
 
     def _run_sdk() -> None:
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
+        sdk_state["loop"] = loop
         try:
             loop.run_until_complete(_sdk_start(sdk_state, ready, error_holder, mic))
         except Exception as e:  # noqa: BLE001
             error_holder.append(e)
             ready.set()
         finally:
-            # Keep loop alive — SDK needs it running for the duration of capture.
-            # We block here until stop_capture() sets sdk_state["stop_event"].
-            stop_ev: asyncio.Event = sdk_state.get("stop_event") or asyncio.Event()
-            loop.run_until_complete(stop_ev.wait())
             loop.close()
 
     t = threading.Thread(target=_run_sdk, name="videodb-capture-sdk", daemon=True)
@@ -96,6 +100,10 @@ def start_capture(output_path: Path, *, fps: int = 30, mic: bool = True) -> Capt
 
     # Wait up to 30s for the SDK to become active.
     if not ready.wait(timeout=30.0):
+        loop = sdk_state.get("loop")
+        stop_event = sdk_state.get("stop_event")
+        if loop and stop_event and not loop.is_closed():
+            loop.call_soon_threadsafe(stop_event.set)
         raise CaptureError("VideoDB CaptureClient did not become active within 30s")
     if error_holder:
         raise CaptureError(f"VideoDB CaptureClient failed: {error_holder[0]}") from error_holder[0]
@@ -122,7 +130,7 @@ async def _sdk_start(
     from videodb.capture import CaptureClient
 
     conn = videodb.connect()
-    token = conn.generate_client_token()
+    token = conn.generate_client_token(expires_in=600)
     cap_session = conn.create_capture_session(
         end_user_id="trace-user",
         collection_id="default",
@@ -134,24 +142,31 @@ async def _sdk_start(
     client = CaptureClient(client_token=token)
     sdk_state["client"] = client
 
-    await client.request_permission("screen_capture")
+    screen_allowed = await client.request_permission("screen_capture")
+    if screen_allowed is False:
+        raise CaptureError("screen recording permission was denied")
+    mic_allowed = False
     if mic:
-        await client.request_permission("microphone")
+        mic_allowed = await client.request_permission("microphone")
+        if mic_allowed is False:
+            log.warning("microphone permission denied; continuing with screen capture only")
 
     channels = await client.list_channels()
     display = channels.displays.default
-    mic_ch = channels.mics.default if mic else None
+    mic_ch = channels.mics.default if mic and mic_allowed is not False else None
 
-    if display:
-        display.store = True
+    if display is None:
+        raise CaptureError("no display capture channel is available")
+
+    display.store = True
+    display.is_primary = True
     if mic_ch:
         mic_ch.store = True
 
     selected = [ch for ch in [display, mic_ch] if ch]
-    await client.start_capture_session(
+    await client.start_session(
         capture_session_id=cap_session.id,
         channels=selected,
-        primary_video_channel_id=display.id if display else None,
     )
 
     stop_event = asyncio.Event()
@@ -161,13 +176,34 @@ async def _sdk_start(
     # Block until stop_capture() triggers the event.
     await stop_event.wait()
 
-    await client.stop_capture()
-    await client.shutdown()
-    sdk_state["stopped"] = True
+    try:
+        await client.stop_session()
+
+        async def _await_flush() -> None:
+            async for message in client.events():
+                if isinstance(message, dict):
+                    event_name = str(message.get("event") or message.get("name") or "")
+                    payload = message.get("payload") or message.get("data") or {}
+                else:
+                    event_name = str(getattr(message, "event", ""))
+                    payload = getattr(message, "payload", {})
+                log.debug("VideoDB capture event=%s", event_name)
+                if event_name in {"recording-complete", "recording:stopped", "recording_complete"}:
+                    return
+                if event_name == "error":
+                    raise CaptureError(f"VideoDB capture recorder error: {payload}")
+
+        try:
+            await asyncio.wait_for(_await_flush(), timeout=30.0)
+        except asyncio.TimeoutError as exc:
+            raise CaptureError("capture recorder did not confirm media flush") from exc
+    finally:
+        await client.shutdown()
+        sdk_state["stopped"] = True
 
 
-def stop_capture(h: CaptureHandles, timeout: float = 60.0) -> tuple[Path, Path | None]:
-    """Stop the SDK capture, wait for export, download video to output_path."""
+def stop_capture(h: CaptureHandles, timeout: float = 120.0) -> tuple[Path | None, Path | None]:
+    """Stop the SDK capture and wait for a durable VideoDB export."""
     sdk_state = h._sdk_state
     loop_thread: threading.Thread = sdk_state.get("thread")
 
@@ -176,78 +212,66 @@ def stop_capture(h: CaptureHandles, timeout: float = 60.0) -> tuple[Path, Path |
     if stop_event:
         # Schedule the set() on the SDK's event loop.
         # We can't call stop_event.set() directly from another thread.
-        import asyncio as _asyncio
-        for _ in range(100):
-            if loop_thread and loop_thread.is_alive():
-                # Post to the loop via call_soon_threadsafe.
-                # We need the loop object — stored during _run_sdk.
-                _loop = sdk_state.get("loop")
-                if _loop and not _loop.is_closed():
-                    _loop.call_soon_threadsafe(stop_event.set)
-                    break
-            time.sleep(0.1)
+        loop = sdk_state.get("loop")
+        if loop and not loop.is_closed():
+            loop.call_soon_threadsafe(stop_event.set)
         else:
-            log.warning("could not signal SDK stop event; forcing")
+            raise CaptureError("capture event loop is unavailable")
 
     # Wait for the SDK thread to finish.
     if loop_thread:
         loop_thread.join(timeout=timeout)
+        if loop_thread.is_alive():
+            raise CaptureError("VideoDB CaptureClient did not stop before timeout")
+
+    if sdk_state.get("errors"):
+        raise CaptureError(f"VideoDB CaptureClient failed: {sdk_state['errors'][0]}")
 
     # Export the session to a permanent video and download it.
     cap_session_id: str | None = sdk_state.get("cap_session_id")
     conn = sdk_state.get("conn")
     if conn and cap_session_id:
         try:
-            _download_exported_video(conn, cap_session_id, h.output_path, timeout=timeout)
+            video_id = _wait_for_exported_video(conn, cap_session_id, timeout=timeout)
+            sdk_state["video_id"] = video_id
         except Exception as e:  # noqa: BLE001
             log.error("failed to download exported video: %s", e)
             raise CaptureError(f"export/download failed: {e}") from e
     else:
         raise CaptureError("no VideoDB connection or session id — cannot export")
 
-    if not h.output_path.exists() or h.output_path.stat().st_size == 0:
-        raise CaptureError(f"capture file empty or missing: {h.output_path}")
-
-    # Audio is embedded in the exported mp4 — no separate wav needed.
-    return h.output_path, None
+    # Audio is muxed into the provider export. No local duplicate is needed.
+    return None, None
 
 
-def _download_exported_video(conn, cap_session_id: str, dest: Path, timeout: float) -> None:
-    """Poll for capture_session.exported event then download the video."""
-    import httpx
-
+def _wait_for_exported_video(conn, cap_session_id: str, timeout: float) -> str:
+    """Trigger/poll CaptureSession.export() and return its permanent video id."""
     deadline = time.time() + timeout
-    log.info("waiting for capture_session.exported (cap_session_id=%s)", cap_session_id)
+    log.info("waiting for capture export (cap_session_id=%s)", cap_session_id)
 
     video_id: str | None = None
     while time.time() < deadline:
         try:
             session = conn.get_capture_session(cap_session_id)
-            # SDK may expose status or exported_video_id directly.
-            vid = getattr(session, "exported_video_id", None)
-            if vid:
-                video_id = vid
+            result = session.export()
+            status = str(result.get("export_status") or "").lower()
+            vid = result.get("video_id") or getattr(session, "exported_video_id", None)
+            if status == "failed":
+                raise CaptureError("VideoDB capture export failed")
+            if status == "exported" and vid:
+                video_id = str(vid)
                 break
-        except Exception:  # noqa: BLE001
-            pass
+        except CaptureError:
+            raise
+        except Exception as exc:  # noqa: BLE001
+            log.debug("capture export poll pending: %s", exc)
         time.sleep(2.0)
 
     if not video_id:
         raise CaptureError("timed out waiting for capture session export")
 
-    # Get the download URL from the video object.
-    video = conn.get_collection().get_video(video_id)
-    stream_url = getattr(video, "stream_url", None) or getattr(video, "url", None)
-    if not stream_url:
-        raise CaptureError(f"no download URL for video {video_id}")
-
-    log.info("downloading exported video from %s", stream_url)
-    with httpx.stream("GET", stream_url, follow_redirects=True, timeout=120.0) as r:
-        r.raise_for_status()
-        with open(dest, "wb") as f:
-            for chunk in r.iter_bytes(chunk_size=65536):
-                f.write(chunk)
-    log.info("downloaded %d bytes to %s", dest.stat().st_size, dest)
+    log.info("capture exported to VideoDB video id=%s", video_id)
+    return video_id
 
 
 # ---------------------------------------------------------------------------

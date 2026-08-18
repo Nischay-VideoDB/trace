@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import logging
 import os
+import platform
 import signal
+import shutil
 import sys
 import time
 from datetime import datetime, timezone
@@ -37,6 +39,38 @@ _TRACE_BANNER = (
 )
 
 
+def _index_and_build(session_id: str) -> bool:
+    """Index one finalized capture and build its reviewer timeline."""
+    from trace_cli.indexing.pipeline import IndexingError, run_indexing
+
+    console.print("[cyan]using VideoDB export and indexing...[/cyan]")
+    try:
+        indexed = run_indexing(session_id)
+    except IndexingError as e:
+        console.print(f"[red]indexing failed: {e}[/red]")
+        return False
+    console.print(
+        f"[green]indexed: video_id={indexed.video_id} scene_index_id={getattr(indexed, 'model_extra', {}).get('scene_index_id') or indexed.model_dump().get('scene_index_id')}[/green]"
+    )
+
+    from trace_cli.timeline.build_for_session import build_timeline_for_session
+    try:
+        tl = build_timeline_for_session(indexed.session_id)
+    except Exception as e:  # noqa: BLE001
+        console.print(f"[red]timeline build failed: {e}[/red]")
+        return False
+    counts = {k: 0 for k in ("progress", "stuck", "research", "speech")}
+    for moment in tl.moments:
+        counts[moment.category] = counts.get(moment.category, 0) + 1
+    console.print(
+        f"[green]timeline: {len(tl.moments)} moments "
+        f"(progress={counts['progress']} stuck={counts['stuck']} "
+        f"research={counts['research']} speech={counts['speech']})[/green]"
+    )
+    console.print(f"[green]final status: {indexed.status}[/green]")
+    return True
+
+
 @app.callback(invoke_without_command=True)
 def _banner(ctx: typer.Context) -> None:
     """Print the trace banner before any subcommand."""
@@ -44,6 +78,103 @@ def _banner(ctx: typer.Context) -> None:
     if ctx.invoked_subcommand is None:
         # Show help when called with no args
         console.print(ctx.get_help())
+
+
+@app.command()
+def doctor(
+    project: Path = typer.Option(Path.cwd(), "--project", "-p", help="Repository to validate"),
+    connect: bool = typer.Option(True, "--connect/--no-connect", help="Verify VideoDB credentials"),
+) -> None:
+    """Validate local capture prerequisites without starting a recording."""
+    checks: list[tuple[str, bool, str]] = []
+    system = platform.system().lower()
+    checks.append(("supported desktop", system in {"darwin", "windows", "linux"}, platform.platform()))
+    checks.append(("git repository", (project / ".git").is_dir(), str(project.resolve())))
+    checks.append(("git", shutil.which("git") is not None, shutil.which("git") or "not found"))
+    checks.append(("uv", shutil.which("uv") is not None, shutil.which("uv") or "not found"))
+
+    if system == "darwin":
+        try:
+            from videodb.capture import CaptureClient  # noqa: F401
+            import watchdog  # noqa: F401
+            capture_ok = True
+            capture_detail = "VideoDB Capture SDK + watchdog available"
+        except ImportError as exc:
+            capture_ok = False
+            capture_detail = f"{exc}; run `uv sync --extra macos`"
+        checks.append(("native capture runtime", capture_ok, capture_detail))
+    elif system == "windows":
+        try:
+            from videodb.capture import CaptureClient  # noqa: F401
+            capture_ok = True
+            capture_detail = "VideoDB Capture SDK available"
+        except ImportError as exc:
+            capture_ok = False
+            capture_detail = f"{exc}; run `uv sync --extra windows`"
+        checks.append(("native capture runtime", capture_ok, capture_detail))
+    else:
+        checks.append(("wf-recorder", shutil.which("wf-recorder") is not None, shutil.which("wf-recorder") or "not found"))
+        checks.append(("ffmpeg", shutil.which("ffmpeg") is not None, shutil.which("ffmpeg") or "not found"))
+
+    if connect:
+        try:
+            Credentials.require("VIDEO_DB_API_KEY")
+            from trace_cli.videodb.client import VideoDBClient
+            client = VideoDBClient()
+            checks.append(("VideoDB connection", True, f"collection {client.collection_id}"))
+        except Exception as exc:  # noqa: BLE001
+            checks.append(("VideoDB connection", False, Credentials.redact(str(exc))[:180]))
+
+    for name, ok, detail in checks:
+        marker = "[green]PASS[/green]" if ok else "[red]FAIL[/red]"
+        console.print(f"{marker}  {name}: {detail}")
+    console.print("[yellow]Screen Recording and Microphone consent are requested only when `trace start` runs.[/yellow]")
+    if not all(ok for _, ok, _ in checks):
+        raise typer.Exit(1)
+
+
+@app.command()
+def handoff(
+    handoff_url: str = typer.Argument(..., help="Signed handoff URL from trace-videodb.vercel.app"),
+    project: Path = typer.Option(Path.cwd(), "--project", "-p", help="Local repository to capture"),
+) -> None:
+    """Open a signed web handoff and print the exact local capture commands."""
+    from urllib.parse import urlparse
+    import httpx
+
+    parsed = urlparse(handoff_url)
+    allowed_hosts = {"trace-videodb.vercel.app", "trace-khaki-sigma.vercel.app"}
+    local_allowed = os.environ.get("TRACE_ALLOW_LOCAL_HANDOFF") == "1" and parsed.hostname in {"127.0.0.1", "localhost"}
+    if parsed.scheme != "https" and not local_allowed:
+        console.print("[red]handoff URL must use HTTPS[/red]")
+        raise typer.Exit(1)
+    if parsed.hostname not in allowed_hosts and not local_allowed:
+        console.print("[red]handoff URL is not a trusted Trace production origin[/red]")
+        raise typer.Exit(1)
+
+    try:
+        response = httpx.get(handoff_url, timeout=10.0, follow_redirects=False)
+        response.raise_for_status()
+        payload = response.json()
+    except Exception as exc:  # noqa: BLE001
+        console.print(f"[red]unable to open handoff: {Credentials.redact(str(exc))[:180]}[/red]")
+        raise typer.Exit(1) from exc
+
+    if payload.get("version") != 1 or payload.get("browserCaptures") is not False:
+        console.print("[red]invalid Trace handoff response[/red]")
+        raise typer.Exit(1)
+
+    options = payload.get("options") or {}
+    flags = []
+    if options.get("live", True):
+        flags.append("--live")
+    if options.get("microphone") is False:
+        flags.append("--no-mic")
+    command = f"uv run trace start --project {str(project.resolve())!r} {' '.join(flags)}".rstrip()
+    console.print(f"[green]handoff:[/green] {payload.get('id', 'verified')}")
+    console.print("[yellow]The browser does not capture or upload your desktop. This command starts native capture locally.[/yellow]")
+    console.print(f"[cyan]1.[/cyan] uv run trace doctor --project {str(project.resolve())!r}")
+    console.print(f"[cyan]2.[/cyan] {command}")
 
 
 # ---------- start ---------------------------------------------------------
@@ -109,8 +240,16 @@ def start(
     hypr = WindowPoller(meta.session_id, store)
     hypr.start()
 
+    provider_capture = getattr(handles, "capture_session_id", None)
+    if provider_capture:
+        store.update_metadata(
+            meta.session_id,
+            capture_mode="rtstream",
+            capture_session_id=provider_capture,
+        )
+
     live_indexer = None
-    if live:
+    if live and not provider_capture:
         live_indexer = LiveIndexer(
             meta.session_id, store, screen_path, audio_path,
             chunk_seconds=chunk_seconds,
@@ -118,6 +257,8 @@ def start(
         live_indexer.start()
         store.update_metadata(meta.session_id, capture_mode="rtstream")
         console.print(f"[magenta]live mode: indexing chunks every {chunk_seconds}s via VideoDB[/magenta]")
+    elif provider_capture:
+        console.print("[magenta]live mode: official VideoDB Capture SDK stream is active[/magenta]")
 
     stop_requested = {"flag": False}
 
@@ -148,17 +289,28 @@ def start(
             store.update_metadata(meta.session_id, status="failed")
             store.clear_active()
             sys.exit(1)
+        provider_video_id = getattr(handles, "provider_video_id", None)
         store.update_metadata(
             meta.session_id,
             status="processing",
             stopped_at=datetime.now(timezone.utc),
+            video_id=provider_video_id,
         )
         store.clear_active()
 
-    console.print(f"[green]video:[/green] {video_path}")
+    if video_path:
+        console.print(f"[green]video:[/green] {video_path}")
+    elif provider_video_id:
+        console.print(f"[green]VideoDB capture export:[/green] {provider_video_id}")
     if real_audio_path:
         console.print(f"[green]audio:[/green] {real_audio_path}")
-    console.print(f"[cyan]session {meta.session_id} is ready. In another terminal, run `trace stop` to finalize and index it.[/cyan]")
+    stop_request = store.artifact_path(meta.session_id, "stop_request.json")
+    if stop_request.exists():
+        console.print(f"[cyan]session {meta.session_id} captured; the `trace stop` caller will finish indexing.[/cyan]")
+    else:
+        console.print(f"[cyan]session {meta.session_id} captured; indexing now.[/cyan]")
+        if not _index_and_build(meta.session_id):
+            sys.exit(1)
 
 
 # ---------- stop ----------------------------------------------------------
@@ -169,24 +321,25 @@ def stop(
 ) -> None:
     """Signal the active capture session to finalize and run indexing pipeline."""
     Credentials.require("VIDEO_DB_API_KEY")
-    from trace_cli.indexing.pipeline import IndexingError, run_indexing
     from trace_cli.session.manager import NoActiveSession, SessionManager
 
     mgr = SessionManager()
     try:
-        meta = mgr.signal_stop()
+        meta = mgr.signal_stop(skip_index=skip_index)
     except NoActiveSession as e:
         console.print(f"[red]{e}[/red]", style="bold")
         sys.exit(1)
     console.print(f"[yellow]stop signal sent to session {meta.session_id}[/yellow]")
     try:
-        final = mgr.wait_for_stop(meta.session_id, timeout=60.0)
+        final = mgr.wait_for_stop(meta.session_id, timeout=180.0)
     except Exception as e:
         console.print(f"[red]{e}[/red]")
         sys.exit(1)
     console.print(f"[green]capture finalized: status={final.status}[/green]")
 
     if skip_index:
+        mgr.store.update_metadata(meta.session_id, status="completed")
+        mgr.store.artifact_path(meta.session_id, "stop_request.json").unlink(missing_ok=True)
         console.print("[yellow]--skip-index set; not uploading to VideoDB[/yellow]")
         return
 
@@ -194,32 +347,34 @@ def stop(
         console.print(f"[yellow]capture status is {final.status}; not indexing[/yellow]")
         return
 
-    console.print("[cyan]uploading to VideoDB and indexing...[/cyan]")
-    try:
-        indexed = run_indexing(final.session_id)
-    except IndexingError as e:
-        console.print(f"[red]indexing failed: {e}[/red]")
+    ok = _index_and_build(final.session_id)
+    mgr.store.artifact_path(meta.session_id, "stop_request.json").unlink(missing_ok=True)
+    if not ok:
         sys.exit(1)
-    console.print(
-        f"[green]indexed: video_id={indexed.video_id} scene_index_id={getattr(indexed, 'model_extra', {}).get('scene_index_id') or indexed.model_dump().get('scene_index_id')}[/green]"
-    )
 
-    # Build timeline from indexed session.
-    from trace_cli.timeline.build_for_session import build_timeline_for_session
+
+@app.command()
+def finalize(
+    session_id: str = typer.Argument(..., help="Captured session id to index and prepare"),
+) -> None:
+    """Resume VideoDB indexing for an already-finalized local capture."""
+    Credentials.require("VIDEO_DB_API_KEY")
+    from trace_cli.session.store import SessionStore, StoreError
+
+    store = SessionStore()
     try:
-        tl = build_timeline_for_session(indexed.session_id)
-    except Exception as e:  # noqa: BLE001
-        console.print(f"[red]timeline build failed: {e}[/red]")
-        sys.exit(1)
-    counts = {k: 0 for k in ("progress", "stuck", "research", "speech")}
-    for m in tl.moments:
-        counts[m.category] = counts.get(m.category, 0) + 1
-    console.print(
-        f"[green]timeline: {len(tl.moments)} moments "
-        f"(progress={counts['progress']} stuck={counts['stuck']} "
-        f"research={counts['research']} speech={counts['speech']})[/green]"
-    )
-    console.print(f"[green]final status: {indexed.status}[/green]")
+        meta = store.read_metadata(session_id)
+    except StoreError as exc:
+        console.print(f"[red]{exc}[/red]")
+        raise typer.Exit(1) from exc
+    if meta.status == "indexed":
+        console.print(f"[green]session {session_id} is already indexed[/green]")
+        return
+    if meta.status not in {"processing", "completed", "transcription_failed", "indexing_failed"}:
+        console.print(f"[red]session status {meta.status} cannot be finalized[/red]")
+        raise typer.Exit(1)
+    if not _index_and_build(session_id):
+        raise typer.Exit(1)
 
 
 # ---------- generate ------------------------------------------------------
@@ -523,4 +678,3 @@ def pr_description(
         from trace_cli.github.client import GitHubClient
         GitHubClient().append_description(pr_url, desc.body)
         console.print(f"\n[green]appended to {pr_url}[/green]")
-

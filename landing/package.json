@@ -4,7 +4,7 @@
   "version": "1.0.0",
   "scripts": {
     "build": "node scripts/build.mjs",
-    "test": "node --test scripts/static-contract.test.mjs"
+    "test": "npm run build && node --test scripts/*.test.mjs"
   },
   "devDependencies": {
     "@babel/core": "7.29.0",

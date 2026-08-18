@@ -100,13 +100,14 @@ def run_indexing(session_id: str, *, store: SessionStore | None = None, scene_ti
     store = store or SessionStore()
     meta = store.read_metadata(session_id)
     screen = store.screen_path(session_id)
-    if not screen.exists() or screen.stat().st_size == 0:
+    provider_video_id = meta.video_id
+    if not provider_video_id and (not screen.exists() or screen.stat().st_size == 0):
         raise IndexingError(f"screen.mp4 missing or empty for session {session_id}")
 
     # Mux audio.wav into the mp4 so VideoDB can transcribe.
     audio = store.audio_path(session_id)
     upload_path = screen
-    if audio.exists() and audio.stat().st_size > 0:
+    if not provider_video_id and audio.exists() and audio.stat().st_size > 0:
         muxed = screen.with_name("screen_av.mp4")
         try:
             upload_path = _mux_audio_into_video(screen, audio, out_path=muxed)
@@ -117,17 +118,25 @@ def run_indexing(session_id: str, *, store: SessionStore | None = None, scene_ti
     client = VideoDBClient()
 
     # 1. Upload (retried because network is the most failure-prone here)
-    log.info("uploading %s to VideoDB...", upload_path)
     try:
-        video = retry_sync(
-            lambda: client.upload_file(upload_path, name=f"trace-{session_id[:8]}"),
-            max_attempts=5,
-            base_delay=2.0,
-        )
+        if provider_video_id:
+            log.info("reusing Capture SDK export video id=%s", provider_video_id)
+            video = retry_sync(
+                lambda: client.get_video(provider_video_id),
+                max_attempts=5,
+                base_delay=2.0,
+            )
+        else:
+            log.info("uploading %s to VideoDB...", upload_path)
+            video = retry_sync(
+                lambda: client.upload_file(upload_path, name=f"trace-{session_id[:8]}"),
+                max_attempts=5,
+                base_delay=2.0,
+            )
     except VideoDBError as e:
         store.update_metadata(session_id, status="indexing_failed")
-        raise IndexingError(f"upload failed: {e}") from e
-    log.info("uploaded video id=%s length=%s", video.id, getattr(video, "length", "?"))
+        raise IndexingError(f"provider video unavailable: {e}") from e
+    log.info("provider video ready id=%s length=%s", video.id, getattr(video, "length", "?"))
     store.update_metadata(session_id, video_id=video.id, status="processing")
 
     # 2. Spoken word index (transcript)
@@ -141,14 +150,10 @@ def run_indexing(session_id: str, *, store: SessionStore | None = None, scene_ti
     # 3. Scene index (classifier prompt). Use sandbox for better VLM quality.
     scene_index_id: str | None = None
     try:
-        log.info("spinning up sandbox for scene indexing...")
-        sandbox = client.ensure_sandbox(tier="medium")
         scene_index_id = client.index_video_scenes(
             video,
             prompt=SCENE_CLASSIFIER_PROMPT,
             time_seconds=scene_time,
-            frame_count=3,
-            sandbox_id=sandbox.id,
         )
         log.info("scene index id=%s", scene_index_id)
     except VideoDBError as e:

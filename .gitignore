@@ -29,3 +29,5 @@ wheels/
 # test caches
 .pytest_cache/
 .hypothesis/
+.vercel
+.env*

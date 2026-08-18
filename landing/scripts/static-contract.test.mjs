@@ -30,6 +30,8 @@ test("landing ships precompiled browser assets without runtime Babel", async () 
   assert.match(docs, /\/static\/trace-docs\.js/);
   assert.match(appBundle, /\/\* src\/app\.jsx \*\//);
   assert.match(appBundle, /\/\* src\/PreparedExamples\.jsx \*\//);
+  assert.match(appBundle, /\/\* src\/Handoff\.jsx \*\//);
+  assert.match(appBundle, /browser never captures your screen/);
   assert.match(docsBundle, /\/\* src\/Docs\.jsx \*\//);
   assert.deepEqual(
     JSON.parse(vercelConfig).rewrites.find(({ source }) => source === "/favicon.ico"),
@@ -38,6 +40,21 @@ test("landing ships precompiled browser assets without runtime Babel", async () 
   new Function(appBundle);
   new Function(docsBundle);
   assert.equal(JSON.parse(manifest).version, 1);
+});
+
+test("hosted handoff is functional and keeps capture on the desktop", async () => {
+  const [handoff, postRoute, getRoute, config] = await Promise.all([
+    readFile(join(landingDirectory, "src/Handoff.jsx"), "utf8"),
+    readFile(join(landingDirectory, "api/handoffs.mjs"), "utf8"),
+    readFile(join(landingDirectory, "api/handoffs/[token].mjs"), "utf8"),
+    readFile(join(landingDirectory, "vercel.json"), "utf8"),
+  ]);
+  assert.match(handoff, /fetch\("\/api\/handoffs"/);
+  assert.match(handoff, /Local repository path/);
+  assert.match(handoff, /value stays in your browser/);
+  assert.match(postRoute, /idempotency-key/);
+  assert.match(getRoute, /verifyHandoff/);
+  assert.deepEqual(JSON.parse(config).regions, ["iad1"]);
 });
 
 test("prepared examples are complete, labelled, and stream original public outputs", async () => {
@@ -77,9 +94,10 @@ test("landing copy reports the supported vendor and CLI counts consistently", as
   ]);
 
   assert.match(hero, /twenty-four API calls/);
-  assert.match(hero, /CLI commands[\s\S]*>7</);
-  assert.match(hero, /contribution-map/);
-  assert.match(commands, /Seven verbs\. One pipeline\./);
+  assert.match(hero, /CLI commands[\s\S]*>15</);
+  assert.match(hero, /capture · index · inspect · generate · review/);
+  assert.match(commands, /Seven core verbs\. One pipeline\./);
+  assert.match(commands, /fifteen commands in total/i);
   assert.match(commands, /name: "trace contribution-map"/);
   assert.equal((commands.match(/name: "trace /g) ?? []).length, 7);
 });

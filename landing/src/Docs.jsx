@@ -1,7 +1,7 @@
 function Docs() {
   const tree = [
     ["dir", "trace_cli/", ""],
-    ["file", "  cli.py", "all commands: start, stop, generate, serve, qa-poll, sessions, inspect, timeline, transcript, focus, contribution-map, pr-description"],
+    ["file", "  cli.py", "15 commands: doctor, handoff, start, stop, finalize, generate, serve, qa-poll, sessions, inspect, timeline, transcript, focus, contribution-map, pr-description"],
     ["file", "  credentials.py", "env var loading + key redaction"],
     ["file", "  videodb/client.py", "single VideoDB facade"],
     ["file", "  github/client.py", "PR URL validator + comment / diff / description ops"],
@@ -17,7 +17,7 @@ function Docs() {
     ["file", "    service_windows.py", "Windows: VideoDB CaptureClient SDK + win32gui window tracking"],
     ["file", "    heartbeat.py", "5s heartbeat writer"],
     ["file", "    watchers.py", "inotify file save watcher + hyprctl window poller (Linux)"],
-    ["file", "    live_indexer.py", "15s chunk upload + index thread (--live mode)"],
+    ["file", "    live_indexer.py", "Linux-only 15s chunk upload + index thread (--live mode)"],
     ["dir",  "  indexing/", ""],
     ["file", "    pipeline.py", "mux audio + upload + spoken/scene index + transcript fetch"],
     ["dir",  "  timeline/", ""],

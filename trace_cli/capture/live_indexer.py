@@ -132,7 +132,7 @@ class LiveIndexer(threading.Thread):
         scene_idx_id: str | None = None
         try:
             scene_idx_id = self._client.index_video_scenes(
-                video, prompt=LIVE_SCENE_PROMPT, time_seconds=5, frame_count=2,
+                video, prompt=LIVE_SCENE_PROMPT, time_seconds=5,
             )
         except Exception as e:  # noqa: BLE001
             log.info("chunk scene index skipped (%s)", e)

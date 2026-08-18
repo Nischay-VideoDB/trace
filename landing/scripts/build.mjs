@@ -11,6 +11,7 @@ const bundles = {
   "trace-app.js": [
     "src/Nav.jsx",
     "src/Hero.jsx",
+    "src/Handoff.jsx",
     "src/PreparedExamples.jsx",
     "src/Commands.jsx",
     "src/PRWalkthrough.jsx",

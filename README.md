@@ -18,7 +18,7 @@
 
 trace gives your pull requests a memory. Run `trace start` before you code and `trace stop` when you're done. That's it - everything else is automatic.
 
-During the session, trace captures your screen and mic, streaming 15-second chunks to VideoDB in real time. On stop, it muxes the audio, uploads the full session, and runs `index_spoken_words` + `index_scenes` with a custom classifier prompt to build a tagged timeline of progress, stuck, research, and speech moments.
+During the session, trace captures your screen and mic. On macOS and Windows, the official VideoDB Capture SDK stores the recording directly in VideoDB; on Linux, `--live` streams 15-second chunks while the local recorder runs. On stop, trace finalizes the provider export and runs `index_spoken_words` + `index_scenes` with a custom classifier prompt to build a tagged timeline of progress, stuck, research, and speech moments.
 
 When you open a PR, `trace generate` selects the most relevant clips from that timeline, generates a narration script grounded in the scene index and spoken transcript, synthesizes voice via OmniVoice, adds a FLUX-generated intro card and ambient music, and assembles everything on a `videodb.editor.Timeline` with three composed tracks. The resulting HLS stream URL is posted directly to the PR.
 
@@ -35,13 +35,16 @@ trace start   →   trace stop   →   trace generate
 
 | Step | What happens |
 |---|---|
+| `trace doctor` | Checks the OS, Git/uv dependencies, capture runtime, and a real VideoDB collection connection without starting a recording or requesting screen permissions. |
+| `trace handoff <signed-url> --project <dir>` | Opens a 24-hour signed plan from the hosted UI and prints the exact local commands. The browser never captures the screen or receives the VideoDB API key. |
 | `trace start --project <dir> [--live]` | Records screen + mic. On Linux: wf-recorder + ffmpeg/pulse. On macOS/Windows: VideoDB Capture SDK. `--live` uploads 15s chunks to VideoDB as you code. |
 | `trace stop` | Finalizes recording, uploads to VideoDB, runs `index_spoken_words` + `index_scenes`, builds a tagged timeline (progress / stuck / research / speech). |
+| `trace finalize <session_id>` | Resumes indexing for an already-exported desktop capture without recording or uploading it again. |
 | `trace generate <session_id> [pr_url]` | Selects clips, generates narration via OmniVoice, assembles a 3-track `editor.Timeline` with FLUX intro card + ambient music, posts HLS URL to PR. Omit `pr_url` to auto-commit, push, and open the PR. |
 | `trace qa-poll <pr_url> <session_id>` | Long-running: polls PR comments for `/trace <question>`, runs dual semantic search (spoken-word + scene), replies with answer + up to 3 bounded clip URLs. |
 | `trace serve` | FastAPI server: landing page, docs, `/api/sessions`. |
 
-Additional commands: `trace sessions`, `trace inspect`, `trace timeline`, `trace transcript`, `trace focus`, `trace contribution-map`, `trace pr-description`.
+Additional commands: `trace serve`, `trace sessions`, `trace inspect`, `trace timeline`, `trace transcript`, `trace focus`, `trace contribution-map`, `trace pr-description` (15 commands total).
 
 ---
 

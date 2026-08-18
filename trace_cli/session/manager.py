@@ -74,7 +74,7 @@ class SessionManager:
 
     # ----- stop ---------------------------------------------------------
 
-    def signal_stop(self) -> SessionMetadata:
+    def signal_stop(self, *, skip_index: bool = False) -> SessionMetadata:
         """Read active.json, SIGINT the running pid. Returns the metadata."""
         meta = self.store.find_active()
         if meta is None:
@@ -88,15 +88,23 @@ class SessionManager:
         except (OSError, _json.JSONDecodeError, KeyError, ValueError) as e:
             raise SessionError(f"active.json malformed: {e}") from e
 
+        request_path = self.store.artifact_path(meta.session_id, "stop_request.json")
+        request_path.write_text(
+            _json.dumps({"skip_index": skip_index}),
+            encoding="utf-8",
+        )
+
         try:
             os.kill(pid, signal.SIGINT)
         except ProcessLookupError:
             log.warning("active pid %d not running; clearing active state", pid)
             self.store.clear_active()
+            request_path.unlink(missing_ok=True)
             raise NoActiveSession(f"recorded pid {pid} no longer exists") from None
         except OSError as e:
             if e.errno == errno.ESRCH:
                 self.store.clear_active()
+                request_path.unlink(missing_ok=True)
                 raise NoActiveSession(f"pid {pid} gone") from e
             raise SessionError(f"failed to signal {pid}: {e}") from e
         return meta

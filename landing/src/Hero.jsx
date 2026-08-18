@@ -121,7 +121,7 @@ function Hero() {
             record a coding session. get a PR that explains itself: narrated walkthrough video, /trace Q&amp;A bot, focus mode, contribution map. one vendor, twenty-four API calls.
           </p>
           <div className="hero-ctas">
-            <a className="btn primary" href="#install">Install →</a>
+            <a className="btn primary" href="#handoff">Create desktop handoff →</a>
             <a className="btn" href="#examples">Explore prepared examples</a>
             <a className="btn" href="#features">Features</a>
           </div>
@@ -133,8 +133,8 @@ function Hero() {
             </div>
             <div>
               <div className="hero-stat-k">CLI commands</div>
-              <div className="hero-stat-v">7</div>
-              <div className="hero-stat-n">start · stop · generate · serve · qa-poll · focus · contribution-map</div>
+              <div className="hero-stat-v">15</div>
+              <div className="hero-stat-n">capture · index · inspect · generate · review</div>
             </div>
             <div>
               <div className="hero-stat-k">Vendors</div>

@@ -91,6 +91,10 @@ class VideoDBClient:
         log.info("connected to VideoDB collection=%s", self._collection.id)
         self._sandbox: dict[str, object] = {}  # tier -> sandbox object
 
+    @property
+    def collection_id(self) -> str:
+        return str(self._collection.id)
+
     # ---- sandbox lifecycle ---------------------------------------------
 
     def ensure_sandbox(self, tier: str = "small"):
@@ -240,12 +244,17 @@ class VideoDBClient:
             prompt=prompt,
         )
 
-        # Model ladder: small-tier first (E2B), medium if needed (26B), bare fallback.
-        attempts = [
-            (SMALL_VLM_MODEL, "small"),
-            (MEDIUM_VLM_MODEL, "medium"),
-            (None, None),
-        ]
+        # The released SDK supports provider-managed scene indexing without a
+        # user-provisioned sandbox. Use that reliable path by default; teams
+        # that explicitly opt into dedicated sandbox compute retain the
+        # quality ladder and its higher startup/cost envelope.
+        attempts = [(None, None)]
+        if os.environ.get("TRACE_SANDBOX_INDEXING") == "1":
+            attempts = [
+                (SMALL_VLM_MODEL, "small"),
+                (MEDIUM_VLM_MODEL, "medium"),
+                (None, None),
+            ]
         last_exc: Exception | None = None
         for model, tier in attempts:
             try:
@@ -264,7 +273,7 @@ class VideoDBClient:
                     if m:
                         log.info("scene index already exists: %s", m.group(1))
                         return m.group(1)
-                if any(t in msg for t in ("not compatible", "invalid", "not supported", "failed")):
+                if any(t in msg for t in ("not compatible", "not ready", "timed out", "invalid", "not supported", "failed")):
                     log.warning("model %s rejected (%s); trying next", model, e)
                     last_exc = e
                     continue
